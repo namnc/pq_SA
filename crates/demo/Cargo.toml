@@ -1,0 +1,15 @@
+[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+primitives = { path = "../primitives" }
+alloy = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
+rand = "0.8"
+rand_chacha = "0.3"
+clap = { version = "4", features = ["derive"] }
+hex = "0.4"
+sha2 = "0.10"
+eyre = "0.6"

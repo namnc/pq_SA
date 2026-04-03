@@ -1,0 +1,9 @@
+[package]
+name = "sender"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+primitives = { path = "../primitives" }
+sidecar = { path = "../sidecar" }
+rand.workspace = true

@@ -1,0 +1,134 @@
+[
+  {
+    "approach": "baseline",
+    "notes": 1,
+    "total_send_us": 32,
+    "total_recv_us": 40,
+    "avg_send_us": 32,
+    "avg_recv_us": 40,
+    "total_calldata_bytes": 1764,
+    "total_gas": 58224,
+    "avg_gas_per_note": 58224
+  },
+  {
+    "approach": "pq-ibsd",
+    "notes": 1,
+    "total_send_us": 168,
+    "total_recv_us": 129,
+    "avg_send_us": 168,
+    "avg_recv_us": 129,
+    "total_calldata_bytes": 1801,
+    "total_gas": 58816,
+    "avg_gas_per_note": 58816
+  },
+  {
+    "approach": "baseline",
+    "notes": 2,
+    "total_send_us": 148,
+    "total_recv_us": 186,
+    "avg_send_us": 74,
+    "avg_recv_us": 93,
+    "total_calldata_bytes": 3528,
+    "total_gas": 116448,
+    "avg_gas_per_note": 58224
+  },
+  {
+    "approach": "pq-ibsd",
+    "notes": 2,
+    "total_send_us": 208,
+    "total_recv_us": 155,
+    "avg_send_us": 104,
+    "avg_recv_us": 77,
+    "total_calldata_bytes": 2481,
+    "total_gas": 99696,
+    "avg_gas_per_note": 49848
+  },
+  {
+    "approach": "baseline",
+    "notes": 5,
+    "total_send_us": 313,
+    "total_recv_us": 384,
+    "avg_send_us": 62,
+    "avg_recv_us": 76,
+    "total_calldata_bytes": 8820,
+    "total_gas": 291120,
+    "avg_gas_per_note": 58224
+  },
+  {
+    "approach": "pq-ibsd",
+    "notes": 5,
+    "total_send_us": 177,
+    "total_recv_us": 134,
+    "avg_send_us": 35,
+    "avg_recv_us": 26,
+    "total_calldata_bytes": 4521,
+    "total_gas": 222336,
+    "avg_gas_per_note": 44467
+  },
+  {
+    "approach": "baseline",
+    "notes": 10,
+    "total_send_us": 486,
+    "total_recv_us": 598,
+    "avg_send_us": 48,
+    "avg_recv_us": 59,
+    "total_calldata_bytes": 17640,
+    "total_gas": 582240,
+    "avg_gas_per_note": 58224
+  },
+  {
+    "approach": "pq-ibsd",
+    "notes": 10,
+    "total_send_us": 162,
+    "total_recv_us": 124,
+    "avg_send_us": 16,
+    "avg_recv_us": 12,
+    "total_calldata_bytes": 7921,
+    "total_gas": 426736,
+    "avg_gas_per_note": 42673
+  },
+  {
+    "approach": "baseline",
+    "notes": 20,
+    "total_send_us": 763,
+    "total_recv_us": 942,
+    "avg_send_us": 38,
+    "avg_recv_us": 47,
+    "total_calldata_bytes": 35280,
+    "total_gas": 1164480,
+    "avg_gas_per_note": 58224
+  },
+  {
+    "approach": "pq-ibsd",
+    "notes": 20,
+    "total_send_us": 169,
+    "total_recv_us": 131,
+    "avg_send_us": 8,
+    "avg_recv_us": 6,
+    "total_calldata_bytes": 14721,
+    "total_gas": 835536,
+    "avg_gas_per_note": 41776
+  },
+  {
+    "approach": "baseline",
+    "notes": 50,
+    "total_send_us": 1623,
+    "total_recv_us": 2001,
+    "avg_send_us": 32,
+    "avg_recv_us": 40,
+    "total_calldata_bytes": 88200,
+    "total_gas": 2911200,
+    "avg_gas_per_note": 58224
+  },
+  {
+    "approach": "pq-ibsd",
+    "notes": 50,
+    "total_send_us": 248,
+    "total_recv_us": 198,
+    "avg_send_us": 4,
+    "avg_recv_us": 3,
+    "total_calldata_bytes": 35121,
+    "total_gas": 2061936,
+    "avg_gas_per_note": 41238
+  }
+]

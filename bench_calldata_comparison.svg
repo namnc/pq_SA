@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" font-family="monospace" font-size="12">
+  <rect width="800" height="500" fill="white"/>
+  <text x="400" y="30" font-size="16" font-weight="bold" text-anchor="middle">Total Calldata: Baseline ML-KEM vs pq-ibsd</text>
+  <line x1="80" y1="420" x2="770" y2="420" stroke="silver"/>
+  <text x="72" y="424" text-anchor="end" fill="gray">0</text>
+  <line x1="80" y1="348" x2="770" y2="348" stroke="silver"/>
+  <text x="72" y="352" text-anchor="end" fill="gray">20285</text>
+  <line x1="80" y1="276" x2="770" y2="276" stroke="silver"/>
+  <text x="72" y="280" text-anchor="end" fill="gray">40571</text>
+  <line x1="80" y1="204" x2="770" y2="204" stroke="silver"/>
+  <text x="72" y="208" text-anchor="end" fill="gray">60857</text>
+  <line x1="80" y1="132" x2="770" y2="132" stroke="silver"/>
+  <text x="72" y="136" text-anchor="end" fill="gray">81143</text>
+  <line x1="80" y1="60" x2="770" y2="60" stroke="silver"/>
+  <text x="72" y="64" text-anchor="end" fill="gray">101429</text>
+  <text x="93.8" y="440" text-anchor="middle" fill="gray">1</text>
+  <text x="107.6" y="440" text-anchor="middle" fill="gray">2</text>
+  <text x="149" y="440" text-anchor="middle" fill="gray">5</text>
+  <text x="218" y="440" text-anchor="middle" fill="gray">10</text>
+  <text x="356" y="440" text-anchor="middle" fill="gray">20</text>
+  <text x="770" y="440" text-anchor="middle" fill="gray">50</text>
+  <text x="400" y="490" text-anchor="middle" font-size="13">Number of Notes</text>
+  <text x="15" y="240" text-anchor="middle" font-size="13" transform="rotate(-90, 15, 240)">Total Calldata (bytes)</text>
+  <polyline points="93.8,413.7 107.6,407.5 149.0,388.7 218.0,357.4 356.0,294.8 770.0,107.0" fill="none" stroke="crimson" stroke-width="2.5"/>
+  <circle cx="93.8" cy="413.7" r="4" fill="crimson"/>
+  <circle cx="107.6" cy="407.5" r="4" fill="crimson"/>
+  <circle cx="149.0" cy="388.7" r="4" fill="crimson"/>
+  <circle cx="218.0" cy="357.4" r="4" fill="crimson"/>
+  <circle cx="356.0" cy="294.8" r="4" fill="crimson"/>
+  <circle cx="770.0" cy="107.0" r="4" fill="crimson"/>
+  <polyline points="93.8,413.6 107.6,411.2 149.0,404.0 218.0,391.9 356.0,367.8 770.0,295.3" fill="none" stroke="steelblue" stroke-width="2.5"/>
+  <circle cx="93.8" cy="413.6" r="4" fill="steelblue"/>
+  <circle cx="107.6" cy="411.2" r="4" fill="steelblue"/>
+  <circle cx="149.0" cy="404.0" r="4" fill="steelblue"/>
+  <circle cx="218.0" cy="391.9" r="4" fill="steelblue"/>
+  <circle cx="356.0" cy="367.8" r="4" fill="steelblue"/>
+  <circle cx="770.0" cy="295.3" r="4" fill="steelblue"/>
+  <rect x="100" y="80" width="240" height="55" fill="white" stroke="silver" rx="4"/>
+  <line x1="110" y1="98" x2="140" y2="98" stroke="crimson" stroke-width="2.5"/>
+  <text x="148" y="102" font-size="12">Baseline (1088 B KEM ct per note)</text>
+  <line x1="110" y1="120" x2="140" y2="120" stroke="steelblue" stroke-width="2.5"/>
+  <text x="148" y="124" font-size="12">pq-ibsd (KEM ct only on 1st note)</text>
+</svg>

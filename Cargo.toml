@@ -1,0 +1,39 @@
+[workspace]
+members = ["crates/*"]
+exclude = ["contracts"]
+resolver = "2"
+
+[workspace.dependencies]
+# Post-quantum KEM
+ml-kem = "0.3.0-rc.1"
+kem = "0.3.0-rc.6"
+
+# Classical EC
+secp256k1 = { version = "0.29", features = ["rand-std", "global-context"] }
+
+# Symmetric crypto
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+hmac = "0.12"
+
+# Erasure coding
+reed-solomon-erasure = "6.0"
+
+# Randomness
+rand = "0.8"
+rand_chacha = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
