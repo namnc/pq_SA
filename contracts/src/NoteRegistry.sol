@@ -217,9 +217,10 @@ contract NoteRegistry {
     }
 
     function _advanceEpoch() internal {
-        if (block.number >= epochStartBlock + BLOCKS_PER_EPOCH) {
+        // Use while loop to correctly handle multiple missed epochs
+        while (block.number >= epochStartBlock + BLOCKS_PER_EPOCH) {
             currentEpoch++;
-            epochStartBlock = block.number;
+            epochStartBlock += BLOCKS_PER_EPOCH;
         }
     }
 }

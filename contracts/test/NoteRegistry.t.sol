@@ -69,6 +69,15 @@ contract NoteRegistryTest is Test {
         assertEq(registry.currentEpoch(), 1);
     }
 
+    function test_multipleEpochsSkipped() public {
+        registry.postFirstContact(keccak256("m1"), new bytes(100));
+        assertEq(registry.currentEpoch(), 0);
+        // Skip 3 full epochs with no posts
+        vm.roll(block.number + 7200 * 3 + 1);
+        registry.postFirstContact(keccak256("m2"), new bytes(100));
+        assertEq(registry.currentEpoch(), 3);
+    }
+
     // --- Minimum sender fee ---
 
     function test_minSenderFeeEnforced() public {
