@@ -237,7 +237,7 @@ ERC-6538's registry stores stealth meta-addresses (spending + viewing public key
 
 ### Why pairwise channels?
 
-BIP-47 (2015) proposed pairwise payment codes for Bitcoin — the same pattern. It was largely abandoned classically because: (1) the 33 B ECDH ephemeral key is trivial, (2) 1-byte view tags filter 99.6% of non-matching notes, (3) viewing keys enable safe scanning delegation, and (4) stealth addresses provide full unlinkability without persistent state.
+BIP-47 (2015) proposed pairwise payment codes for Bitcoin — the same pattern. It was saw limited adoption classically because: (1) the 33 B ECDH ephemeral key is trivial, (2) 1-byte view tags filter 99.6% of non-matching notes, (3) viewing keys enable safe scanning delegation, and (4) stealth addresses provide full unlinkability without persistent state.
 
 None of these hold for ML-KEM. The ciphertext is 1,088 B (33x larger), no view tag or viewing key exists (the decapsulation key is the full secret), and delegation requires giving away spending capability. Without pairwise channels, every PQ note repeats the 1,088 B ciphertext — a permanent 150% overhead.
 
@@ -272,7 +272,7 @@ A reference implementation is available at [pq-sa](https://github.com/namnc/pq_S
 - `NoteRegistry.sol` — Solidity contract implementing all three interfaces (key registry, note posting, incentives)
 - Rust cryptographic primitives (hybrid KEM, AEAD, erasure coding, commitments)
 - End-to-end demo deployed on Sepolia at [`0x07EB0C4D70041D2B4CAC38cAB9bd2360d0639E6E`](https://sepolia.etherscan.io/address/0x07EB0C4D70041D2B4CAC38cAB9bd2360d0639E6E)
-- 37 Rust tests + 22 Foundry tests
+- 37 Rust tests + 20 Foundry tests
 
 Scheme 0x01 (secp256k1 + ML-KEM-768 + ChaCha20-Poly1305) is fully implemented and tested.
 

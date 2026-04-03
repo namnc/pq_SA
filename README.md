@@ -10,7 +10,7 @@ Live on Sepolia: [`0x07EB0C4D70041D2B4CAC38cAB9bd2360d0639E6E`](https://sepolia.
 
 Current Ethereum privacy systems (stealth addresses, note encryption) rely on ECDH or similar constructions that a cryptographically-relevant quantum computer would break. ML-KEM (FIPS 203) is quantum-resistant, but has no read-only key subset — the decapsulation key *is* the full secret.
 
-BIP-47 (2015) proposed pairwise payment codes for Bitcoin — the same pattern. It was largely abandoned classically because the 33 B ECDH ephemeral key is trivial, 1-byte view tags filter 99.6% of notes, and viewing keys enable safe delegation. None of these hold for ML-KEM: the ciphertext is 1,088 B (33x larger), no view tag exists (no viewing key to derive one from), and delegation requires giving away the spending key. Pairwise channels are PQ-*necessary*, not just convenient — the classical failure of BIP-47 does not predict the PQ outcome.
+BIP-47 (2015) proposed pairwise payment codes for Bitcoin — the same pattern. It was saw limited adoption classically because the 33 B ECDH ephemeral key is trivial, 1-byte view tags filter 99.6% of notes, and viewing keys enable safe delegation. None of these hold for ML-KEM: the ciphertext is 1,088 B (33x larger), no view tag exists (no viewing key to derive one from), and delegation requires giving away the spending key. Pairwise channels are PQ-*necessary*, not just convenient — the classical failure of BIP-47 does not predict the PQ outcome.
 
 This PoC demonstrates a hybrid approach: ECDH for transitional compatibility, ML-KEM-768 for post-quantum security, combined via HKDF-SHA256 into a single pairwise key. If either primitive holds, the channel is secure.
 
@@ -83,13 +83,23 @@ pq-sa/
 - Rust 1.91+ (`rustup update stable`)
 - Foundry (`curl -L https://foundry.paradigm.xyz | bash && foundryup`)
 
+### Build
+
+```bash
+# Build Solidity contracts first (demo depends on compiled ABI)
+cd contracts && forge build && cd ..
+
+# Build Rust workspace
+cargo build --release
+```
+
 ### Run Tests
 
 ```bash
-# Rust: 37 tests, Solidity: 20 tests
+# Rust: 37 tests
 cargo test --release
 
-# Solidity: 22 tests
+# Solidity: 27 tests
 cd contracts && forge test -vv
 ```
 
@@ -99,7 +109,7 @@ cd contracts && forge test -vv
 # Terminal 1: start local testnet
 anvil
 
-# Terminal 2: run the full sender → recipient flow
+# Terminal 2: run the full sender → recipient flow (uses separate sender + recipient wallets)
 cargo run -p demo --release
 ```
 
@@ -425,38 +435,38 @@ Naive OMR: scanning is solved, but calldata gets worse
   ...every note
 ```
 
-The recipient no longer trial-decrypts, but the sender now pays **~2,728 B of calldata per note** — 4x more than PoC A's known-pair notes and worse than the baseline.
+The recipient no longer trial-decrypts, but the sender now pays **~1,600-2,700 B of calldata per note (depends on PVW params)** — 4x more than PoC A's known-pair notes and worse than the baseline.
 
 | | PoC A (no OMR) | Naive OMR |
 |--|---------------|-----------|
-| Calldata/note | 680 B | **~2,728 B (4x worse)** |
+| Calldata/note | 680 B | **~1,600-2,728 B (2-4x worse, depends on PVW params)** |
 | Gas/note | ~74K | **~123K (66% worse)** |
-| Recipient scan | O(N x S) trials | **O(1) digest** |
+| Recipient scan | O(N x S) trials | **sublinear (digest-based)** |
 | At 10K notes/day | 6.8 MB calldata | **27.3 MB calldata** |
-| ETH/day (30 gwei) | 22.1 | **36.8** |
+| ETH/day (calldata gas, 30 gwei) | 22.1 | 29-37 |
 
 Naive OMR trades cheap recipient scanning for expensive on-chain data. At scale, this is worse economics.
 
 ### Stage 3: PoC B — Transciphered OMR (separate repo, planned)
 
-**Problem**: Naive OMR's PVW clues are too large for calldata (~2,728 B). We need O(1) scanning without the calldata penalty.
+**Problem**: Naive OMR's PVW clues are too large for calldata (~1,600-2,700 B). We need sublinear scanning (digest-based) without the calldata penalty.
 
-**Solution**: Pasta-4 transciphering compresses the on-chain detection footprint from ~2,728 B to **104 B** while moving ciphertext to blobs. See the [companion PoC B post](../ethresearch_post_poc_b.md) for full FHE depth analysis and implementation plan.
+**Solution**: Pasta-4 transciphering compresses the on-chain detection footprint from ~1,600-2,700 B to **104 B** while moving ciphertext to blobs. See the [companion PoC B post](../ethresearch_post_poc_b.md) for full FHE depth analysis and implementation plan.
 
 | | PoC A | Naive OMR | **PoC B** |
 |--|-------|-----------|-----------|
-| **Calldata/note** | 680 B | ~2,728 B | **104 B** (+700 B blob) |
-| **Gas/note** | ~74K | ~123K | **~60K** (projected) |
-| **Recipient scan** | O(N x S) AEADs | O(1) | **O(1)** |
+| **Calldata/note** | 680 B | ~1,600-2,700 B | **104 B** (+700 B blob) |
+| **Gas/note** | ~74K | ~123K | **~60-75K** (projected) |
+| **Recipient scan** | O(N x S) AEADs | sublinear (digest) | **sublinear** |
 
-PoC B depends on a BFV depth benchmark (composed depth 11-13 in a budget of 14) that has not yet been run. If it fails, PoC A remains standalone.
+PoC B depends on a BFV depth benchmark (composed depth 8-10 in a budget of 14) that has not yet been run. If it fails, PoC A remains standalone.
 
 ### Summary
 
 ```
 Calldata per known-pair note:
 
-Naive OMR    |=====================================================| ~2,728 B
+Naive OMR    |=============================================| ~1,600-2,700 B
 Baseline     |=================================|                    1,732 B
 Classical    |=============|                                          709 B
 PoC A        |============|                                           680 B  (≈ classical)
@@ -535,7 +545,7 @@ The contract supports both fee types simultaneously (20 Foundry tests).
 
 ## Test Coverage
 
-**37 Rust tests + 20 Foundry tests = 57 total**
+**37 Rust tests + 27 Foundry tests = 64 total**
 
 | Module | Tests | Coverage |
 |--------|-------|----------|

@@ -90,13 +90,18 @@ pub fn decode(
         return Err("expected M shard slots");
     }
 
-    // Get payload_len and shard_data_len from any available shard
-    let payload_len = available_shards.iter()
+    // Get reference header from the first available shard
+    let first_shard = available_shards.iter()
         .flatten()
         .next()
-        .ok_or("no shards available")?
-        .header.payload_len as usize;
-    // Verify HMACs and build RS input
+        .ok_or("no shards available")?;
+    let payload_len = first_shard.header.payload_len as usize;
+    let ref_total = first_shard.header.total_shards;
+    let ref_threshold = first_shard.header.threshold;
+    let ref_msg_id = first_shard.header.msg_id;
+    let ref_payload_len = first_shard.header.payload_len;
+
+    // Verify HMACs AND header consistency across shards
     let mut shard_data: Vec<Option<Vec<u8>>> = vec![None; M];
     let mut valid_count = 0;
 
@@ -104,6 +109,15 @@ pub fn decode(
         if let Some(shard) = opt {
             let idx = shard.header.shard_index as usize;
             if idx >= M { continue; }
+
+            // Validate header fields match the reference shard
+            if shard.header.total_shards != ref_total
+                || shard.header.threshold != ref_threshold
+                || shard.header.msg_id != ref_msg_id
+                || shard.header.payload_len != ref_payload_len
+            {
+                continue; // Inconsistent header — treat as missing
+            }
 
             if verify_shard_hmac(k_pairwise, shard) {
                 shard_data[idx] = Some(shard.data.clone());

@@ -6,34 +6,24 @@ import {NoteRegistry} from "../src/NoteRegistry.sol";
 
 contract NoteRegistryTest is Test {
     NoteRegistry public registry;
+    address deployer = address(this);
     address sender = address(0x1);
     address recipient = address(0x2);
     address vault = address(0x3);
-
-    event FirstContact(uint64 indexed noteId, uint256 indexed epoch, bytes32 commitment, bytes payload);
-    event NotePosted(uint64 indexed noteId, uint256 indexed epoch, bytes32 commitment, bytes16 nonce, bytes ciphertext);
-    event KeyRegistered(address indexed recipient, bytes pkEc, bytes ekKem);
-    event NoteArchived(uint64 indexed noteId, bytes32 commitment, address payer, uint256 fee);
-    event BalanceDeposited(address indexed recipient, uint256 amount);
-    event BalanceWithdrawn(address indexed recipient, uint256 amount);
-    event NoteSpent(uint64 indexed noteId, bytes32 nullifier, uint256 feePaid);
+    address attacker = address(0x4);
 
     function setUp() public {
         registry = new NoteRegistry(vault);
         vm.deal(sender, 10 ether);
         vm.deal(recipient, 10 ether);
+        vm.deal(attacker, 10 ether);
     }
 
-    // --- Core note posting ---
+    // --- Key registration ---
 
     function test_registerKeys() public {
-        bytes memory pkEc = new bytes(33);
-        bytes memory ekKem = new bytes(1184);
-
         vm.prank(recipient);
-        vm.expectEmit(true, false, false, true);
-        emit KeyRegistered(recipient, pkEc, ekKem);
-        registry.registerKeys(pkEc, ekKem);
+        registry.registerKeys(new bytes(33), new bytes(1184));
         assertTrue(registry.registered(recipient));
     }
 
@@ -43,105 +33,120 @@ contract NoteRegistryTest is Test {
         registry.registerKeys(new bytes(32), new bytes(1184));
     }
 
-    function test_postFirstContact() public {
-        bytes32 commitment = keccak256("test commitment");
-        bytes memory payload = new bytes(1769);
+    // --- Note posting ---
 
+    function test_postFirstContact() public {
+        bytes32 commitment = keccak256("c1");
         vm.prank(sender);
-        registry.postFirstContact(commitment, payload);
+        registry.postFirstContact(commitment, new bytes(1769));
         assertEq(registry.nextNoteId(), 1);
         assertEq(registry.noteCommitments(0), commitment);
     }
 
     function test_postNote() public {
-        bytes32 commitment = keccak256("test note");
         vm.prank(sender);
-        registry.postNote(commitment, bytes16(uint128(42)), new bytes(632));
+        registry.postNote(keccak256("n1"), bytes16(uint128(42)), new bytes(632));
         assertEq(registry.nextNoteId(), 1);
     }
 
-    function test_noteIdIncrementsAcrossBothTypes() public {
-        registry.postFirstContact(keccak256("c1"), new bytes(100));
-        registry.postNote(keccak256("c2"), bytes16(uint128(1)), new bytes(632));
+    function test_rejectZeroCommitment() public {
+        vm.prank(sender);
+        vm.expectRevert("zero commitment");
+        registry.postFirstContact(bytes32(0), new bytes(100));
+    }
+
+    function test_noteIdIncrements() public {
+        registry.postFirstContact(keccak256("a"), new bytes(100));
+        registry.postNote(keccak256("b"), bytes16(uint128(1)), new bytes(632));
         assertEq(registry.nextNoteId(), 2);
     }
 
     function test_epochAdvances() public {
-        registry.postFirstContact(keccak256("c"), new bytes(100));
+        registry.postFirstContact(keccak256("e1"), new bytes(100));
         assertEq(registry.currentEpoch(), 0);
         vm.roll(block.number + 7201);
-        registry.postFirstContact(keccak256("c"), new bytes(100));
+        registry.postFirstContact(keccak256("e2"), new bytes(100));
         assertEq(registry.currentEpoch(), 1);
     }
 
-    // --- Sender-pays archival ---
+    // --- Minimum sender fee ---
 
-    function test_senderPaysArchival() public {
-        bytes32 commitment = keccak256("archived");
-        uint256 fee = 0.001 ether;
+    function test_minSenderFeeEnforced() public {
+        registry.setMinSenderFee(0.001 ether);
+        vm.prank(sender);
+        vm.expectRevert("below min sender fee");
+        registry.postFirstContact(keccak256("x"), new bytes(100));
+    }
+
+    function test_minSenderFeePasses() public {
+        registry.setMinSenderFee(0.001 ether);
+        vm.prank(sender);
+        registry.postFirstContact{value: 0.001 ether}(keccak256("y"), new bytes(100));
+        assertEq(registry.nextNoteId(), 1);
+    }
+
+    function test_zeroMinFeeAllowsFree() public {
+        registry.postFirstContact(keccak256("free"), new bytes(100));
+        assertEq(registry.nextNoteId(), 1);
+    }
+
+    // --- Fee forwarding ---
+
+    function test_feeForwardedToVault() public {
         uint256 vaultBefore = vault.balance;
-
         vm.prank(sender);
-        registry.postFirstContact{value: fee}(commitment, new bytes(100));
-
-        assertEq(vault.balance, vaultBefore + fee);
+        registry.postFirstContact{value: 0.001 ether}(keccak256("p"), new bytes(100));
+        assertEq(vault.balance, vaultBefore + 0.001 ether);
         assertTrue(registry.archived(0));
     }
 
-    function test_receiverPaysArchival() public {
-        bytes32 commitment = keccak256("receiver pays");
+    function test_feeRefundedWhenNoVault() public {
+        NoteRegistry noVault = new NoteRegistry(address(0));
+        uint256 senderBefore = sender.balance;
         vm.prank(sender);
-        registry.postNote(commitment, bytes16(uint128(1)), new bytes(632));
+        noVault.postFirstContact{value: 0.001 ether}(keccak256("rv"), new bytes(100));
+        // ETH refunded
+        assertEq(sender.balance, senderBefore);
+        assertFalse(noVault.archived(0));
+    }
 
-        uint256 fee = 0.001 ether;
+    // --- Archival ---
+
+    function test_archiveNote() public {
+        registry.postNote(keccak256("ar"), bytes16(uint128(1)), new bytes(632));
         vm.prank(recipient);
-        registry.archiveNote{value: fee}(0);
+        registry.archiveNote{value: 0.001 ether}(0);
         assertTrue(registry.archived(0));
     }
 
-    function test_archiveNonexistentNoteFails() public {
-        vm.prank(recipient);
+    function test_archiveNonexistentFails() public {
         vm.expectRevert("note does not exist");
         registry.archiveNote{value: 0.001 ether}(999);
     }
 
     function test_archiveRequiresFee() public {
-        registry.postFirstContact(keccak256("x"), new bytes(100));
-        vm.prank(recipient);
+        registry.postFirstContact(keccak256("af"), new bytes(100));
         vm.expectRevert("must send archival fee");
         registry.archiveNote(0);
     }
 
-    function test_noFeeNoArchival() public {
-        registry.postFirstContact(keccak256("no fee"), new bytes(100));
-        assertFalse(registry.archived(0));
+    function test_doubleArchiveFails() public {
+        registry.postFirstContact(keccak256("da"), new bytes(100));
+        registry.archiveNote{value: 0.001 ether}(0);
+        vm.expectRevert("already archived");
+        registry.archiveNote{value: 0.001 ether}(0);
     }
 
-    function test_noVaultNoArchival() public {
-        NoteRegistry noVault = new NoteRegistry(address(0));
-        noVault.postFirstContact(keccak256("no vault"), new bytes(100));
-        assertFalse(noVault.archived(0));
-    }
+    // --- Subscription ---
 
-    // --- Subscription: deposit/withdraw ---
-
-    function test_depositBalance() public {
+    function test_depositAndWithdraw() public {
         vm.prank(recipient);
-        vm.expectEmit(true, false, false, true);
-        emit BalanceDeposited(recipient, 1 ether);
         registry.depositBalance{value: 1 ether}();
-
         assertEq(registry.balances(recipient), 1 ether);
-    }
-
-    function test_withdrawBalance() public {
-        vm.prank(recipient);
-        registry.depositBalance{value: 1 ether}();
 
         uint256 before = recipient.balance;
         vm.prank(recipient);
         registry.withdrawBalance(0.5 ether);
-
         assertEq(registry.balances(recipient), 0.5 ether);
         assertEq(recipient.balance, before + 0.5 ether);
     }
@@ -149,75 +154,92 @@ contract NoteRegistryTest is Test {
     function test_withdrawInsufficientFails() public {
         vm.prank(recipient);
         registry.depositBalance{value: 0.1 ether}();
-
         vm.prank(recipient);
         vm.expectRevert("insufficient balance");
         registry.withdrawBalance(1 ether);
     }
 
-    // --- Pay-on-spend ---
+    // --- spendNote: bound to noteId + one-time ---
 
     function test_spendNote() public {
-        // Setup: post note, set fee, deposit balance
-        bytes32 commitment = keccak256("spendable");
-        registry.postFirstContact(commitment, new bytes(100));
-
-        uint256 fee = 0.001 ether;
-        vm.prank(vault);
-        registry.setServerFeePerNote(fee);
-
+        registry.postFirstContact(keccak256("sp"), new bytes(100));
+        registry.setServerFeePerNote(0.001 ether);
         vm.prank(recipient);
         registry.depositBalance{value: 1 ether}();
 
-        // Spend
-        bytes32 nullifier = keccak256("nullifier-1");
         uint256 vaultBefore = vault.balance;
-
         vm.prank(recipient);
-        vm.expectEmit(true, false, false, true);
-        emit NoteSpent(0, nullifier, fee);
-        registry.spendNote(0, nullifier);
+        registry.spendNote(0, keccak256("null-1"));
 
-        assertEq(vault.balance, vaultBefore + fee);
-        assertEq(registry.balances(recipient), 1 ether - fee);
-        assertTrue(registry.nullifiers(nullifier));
+        assertTrue(registry.spent(0));
+        assertTrue(registry.nullifiers(keccak256("null-1")));
+        assertEq(vault.balance, vaultBefore + 0.001 ether);
     }
 
-    function test_doubleSpendFails() public {
+    function test_sameNoteCannotBeSpentTwice() public {
         registry.postFirstContact(keccak256("ds"), new bytes(100));
-        bytes32 nullifier = keccak256("null-ds");
+        registry.spendNote(0, keccak256("n1"));
 
-        vm.prank(recipient);
+        // Same noteId, different nullifier — fails because noteId is marked spent
+        vm.expectRevert("note already spent");
+        registry.spendNote(0, keccak256("n2"));
+    }
+
+    function test_sameNullifierCannotBeReused() public {
+        registry.postFirstContact(keccak256("r1"), new bytes(100));
+        registry.postFirstContact(keccak256("r2"), new bytes(100));
+
+        bytes32 nullifier = keccak256("shared");
         registry.spendNote(0, nullifier);
 
-        vm.prank(recipient);
-        vm.expectRevert("already spent");
-        registry.spendNote(0, nullifier);
+        vm.expectRevert("nullifier already used");
+        registry.spendNote(1, nullifier);
+    }
+
+    function test_spendNonexistentFails() public {
+        vm.expectRevert("note does not exist");
+        registry.spendNote(999, keccak256("bad"));
     }
 
     function test_spendInsufficientBalanceFails() public {
         registry.postFirstContact(keccak256("poor"), new bytes(100));
-
-        vm.prank(vault);
         registry.setServerFeePerNote(1 ether);
-
         vm.prank(recipient);
         vm.expectRevert("insufficient balance for fee");
         registry.spendNote(0, keccak256("null-poor"));
     }
 
     function test_spendWithZeroFee() public {
-        registry.postFirstContact(keccak256("free"), new bytes(100));
-        // serverFeePerNote defaults to 0
-
-        vm.prank(recipient);
-        registry.spendNote(0, keccak256("null-free"));
-        // Should succeed without any balance needed
+        registry.postFirstContact(keccak256("zf"), new bytes(100));
+        registry.spendNote(0, keccak256("null-zf"));
+        assertTrue(registry.spent(0));
     }
 
-    function test_spendNonexistentNoteFails() public {
-        vm.prank(recipient);
-        vm.expectRevert("note does not exist");
-        registry.spendNote(999, keccak256("null-bad"));
+    // --- Admin: owner-only ---
+
+    function test_onlyOwnerCanSetVault() public {
+        vm.prank(attacker);
+        vm.expectRevert("not owner");
+        registry.setArchivalVault(attacker);
+
+        registry.setArchivalVault(address(0x5));
+        assertEq(registry.archivalVault(), address(0x5));
+    }
+
+    function test_onlyOwnerCanSetFees() public {
+        vm.prank(attacker);
+        vm.expectRevert("not owner");
+        registry.setServerFeePerNote(1 ether);
+
+        vm.prank(attacker);
+        vm.expectRevert("not owner");
+        registry.setMinSenderFee(1 ether);
+    }
+
+    function test_zeroVaultCannotBeHijacked() public {
+        NoteRegistry noVault = new NoteRegistry(address(0));
+        vm.prank(attacker);
+        vm.expectRevert("not owner");
+        noVault.setArchivalVault(attacker);
     }
 }

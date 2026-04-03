@@ -250,8 +250,8 @@ async fn main() -> Result<()> {
     println!("==========================================================");
     println!();
     println!("  Compare with PQ-SA:");
-    println!("    First contact:  ~95K gas, 1769 B calldata");
-    println!("    Known-pair:     ~51K gas, ~648 B calldata");
+    println!("    First contact:  ~117K gas, 1769 B calldata");
+    println!("    Known-pair:     ~74K gas, 680 B calldata");
     println!("    After 1st note: {:.0}% less gas, {:.0}% less calldata",
         (1.0 - 51000.0 / avg_gas as f64) * 100.0,
         (1.0 - 648.0 / avg_calldata as f64) * 100.0,

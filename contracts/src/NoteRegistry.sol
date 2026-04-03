@@ -1,26 +1,31 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title NoteRegistry — Append-only log for PQ in-band secret distribution
+/// @title NoteRegistry — Append-only log for PQ stealth address note distribution
 /// @notice Stores first-contact KEM ciphertexts and encrypted notes as events.
-///         All verification and decryption happens off-chain on the recipient side.
-///         Supports three payment models for archival and OMR server incentives:
-///         1. Sender-pays: include msg.value when posting (forwarded to archival vault)
-///         2. Receiver subscription: deposit balance, auto-deducted on note spend
-///         3. Pay-on-spend: server archives speculatively, gets paid when note is spent
+///         All cryptographic verification happens off-chain on the recipient side.
+///         Implements a two-fee model:
+///         1. Sender fee: paid at post time, covers FHE processing (non-refundable)
+///         2. Spend fee: deducted from recipient balance at spend time, covers archival
 contract NoteRegistry {
     uint64 public nextNoteId;
     uint256 public currentEpoch;
     uint256 public epochStartBlock;
     uint256 public constant BLOCKS_PER_EPOCH = 7200; // ~1 day on mainnet
 
-    /// @notice Address that receives archival/OMR fees.
+    /// @notice Contract owner (deployer). Manages admin functions.
+    address public immutable owner;
+
+    /// @notice Address that receives archival/OMR fees. Zero = disabled.
     address public archivalVault;
+
+    /// @notice Minimum fee required when posting a note (spam prevention).
+    uint256 public minSenderFee;
 
     /// @notice Fee deducted from recipient balance per note spend.
     uint256 public serverFeePerNote;
 
-    /// @notice Recipient subscription balances for pay-on-spend model.
+    /// @notice Recipient subscription balances.
     mapping(address => uint256) public balances;
 
     /// @notice Mapping from noteId to commitment.
@@ -29,8 +34,13 @@ contract NoteRegistry {
     /// @notice Tracks whether a note has been archived.
     mapping(uint64 => bool) public archived;
 
-    /// @notice Tracks whether a note has been spent (nullified).
+    /// @notice Tracks whether a noteId has been spent.
+    mapping(uint64 => bool) public spent;
+
+    /// @notice Tracks nullifiers to prevent reuse across notes.
     mapping(bytes32 => bool) public nullifiers;
+
+    mapping(address => bool) public registered;
 
     // --- Events ---
 
@@ -62,13 +72,12 @@ contract NoteRegistry {
         uint256 fee
     );
 
-    event BalanceDeposited(address indexed recipient, uint256 amount);
-    event BalanceWithdrawn(address indexed recipient, uint256 amount);
+    event BalanceDeposited(address indexed account, uint256 amount);
+    event BalanceWithdrawn(address indexed account, uint256 amount);
     event NoteSpent(uint64 indexed noteId, bytes32 nullifier, uint256 feePaid);
 
-    mapping(address => bool) public registered;
-
     constructor(address _archivalVault) {
+        owner = msg.sender;
         epochStartBlock = block.number;
         archivalVault = _archivalVault;
     }
@@ -85,15 +94,17 @@ contract NoteRegistry {
     }
 
     // =========================================================================
-    //  Note posting (sender-pays archival is optional via msg.value)
+    //  Note posting (sender fee enforced)
     // =========================================================================
 
     function postFirstContact(bytes32 commitment, bytes calldata payload) external payable {
+        require(commitment != bytes32(0), "zero commitment");
+        require(msg.value >= minSenderFee, "below min sender fee");
         _advanceEpoch();
         uint64 noteId = nextNoteId++;
         noteCommitments[noteId] = commitment;
         emit FirstContact(noteId, currentEpoch, commitment, payload);
-        _handleArchivalFee(noteId, commitment);
+        _handleFee(noteId, commitment);
     }
 
     function postNote(
@@ -101,11 +112,13 @@ contract NoteRegistry {
         bytes16 nonce,
         bytes calldata ciphertext
     ) external payable {
+        require(commitment != bytes32(0), "zero commitment");
+        require(msg.value >= minSenderFee, "below min sender fee");
         _advanceEpoch();
         uint64 noteId = nextNoteId++;
         noteCommitments[noteId] = commitment;
         emit NotePosted(noteId, currentEpoch, commitment, nonce, ciphertext);
-        _handleArchivalFee(noteId, commitment);
+        _handleFee(noteId, commitment);
     }
 
     // =========================================================================
@@ -114,23 +127,21 @@ contract NoteRegistry {
 
     function archiveNote(uint64 noteId) external payable {
         require(noteCommitments[noteId] != bytes32(0), "note does not exist");
+        require(!archived[noteId], "already archived");
         require(msg.value > 0, "must send archival fee");
-        _handleArchivalFee(noteId, noteCommitments[noteId]);
+        _handleFee(noteId, noteCommitments[noteId]);
     }
 
     // =========================================================================
-    //  Subscription: deposit/withdraw balance for pay-on-spend
+    //  Subscription: deposit/withdraw balance
     // =========================================================================
 
-    /// @notice Deposit ETH as subscription balance. Covers archival + OMR fees
-    ///         that are deducted when spending notes.
     function depositBalance() external payable {
         require(msg.value > 0, "must send value");
         balances[msg.sender] += msg.value;
         emit BalanceDeposited(msg.sender, msg.value);
     }
 
-    /// @notice Withdraw unused subscription balance.
     function withdrawBalance(uint256 amount) external {
         require(balances[msg.sender] >= amount, "insufficient balance");
         balances[msg.sender] -= amount;
@@ -140,18 +151,20 @@ contract NoteRegistry {
     }
 
     // =========================================================================
-    //  Pay-on-spend: recipient pays server when spending (nullifying) a note
+    //  Spend: nullifier bound to noteId, one spend per note
     // =========================================================================
 
-    /// @notice Spend (nullify) a note. Deducts serverFeePerNote from the caller's
-    ///         balance and forwards it to the archival vault / OMR server.
-    ///         The server is incentivized to store and serve note data because it
-    ///         only gets paid when notes are actually spent.
+    /// @notice Spend (nullify) a note. Each noteId can only be spent once.
+    ///         The nullifier must be unique and is bound to the noteId.
     /// @param noteId The note being spent
-    /// @param nullifier The nullifier (prevents double-spend)
+    /// @param nullifier The nullifier (derived off-chain from k_pairwise + nonce).
+    ///        The contract binds this nullifier to noteId to prevent reuse.
     function spendNote(uint64 noteId, bytes32 nullifier) external {
         require(noteCommitments[noteId] != bytes32(0), "note does not exist");
-        require(!nullifiers[nullifier], "already spent");
+        require(!spent[noteId], "note already spent");
+        require(!nullifiers[nullifier], "nullifier already used");
+
+        spent[noteId] = true;
         nullifiers[nullifier] = true;
 
         uint256 fee = serverFeePerNote;
@@ -166,32 +179,40 @@ contract NoteRegistry {
     }
 
     // =========================================================================
-    //  Admin
+    //  Admin (owner-only)
     // =========================================================================
 
     function setArchivalVault(address _archivalVault) external {
-        require(
-            archivalVault == address(0) || msg.sender == archivalVault,
-            "not authorized"
-        );
+        require(msg.sender == owner, "not owner");
         archivalVault = _archivalVault;
     }
 
     function setServerFeePerNote(uint256 _fee) external {
-        require(msg.sender == archivalVault, "not authorized");
+        require(msg.sender == owner, "not owner");
         serverFeePerNote = _fee;
+    }
+
+    function setMinSenderFee(uint256 _fee) external {
+        require(msg.sender == owner, "not owner");
+        minSenderFee = _fee;
     }
 
     // =========================================================================
     //  Internal
     // =========================================================================
 
-    function _handleArchivalFee(uint64 noteId, bytes32 commitment) internal {
-        if (msg.value > 0 && archivalVault != address(0)) {
-            archived[noteId] = true;
-            (bool sent,) = archivalVault.call{value: msg.value}("");
-            require(sent, "archival fee transfer failed");
-            emit NoteArchived(noteId, commitment, msg.sender, msg.value);
+    function _handleFee(uint64 noteId, bytes32 commitment) internal {
+        if (msg.value > 0) {
+            if (archivalVault != address(0)) {
+                archived[noteId] = true;
+                (bool sent,) = archivalVault.call{value: msg.value}("");
+                require(sent, "fee transfer failed");
+                emit NoteArchived(noteId, commitment, msg.sender, msg.value);
+            } else {
+                // No vault configured — refund to prevent stuck ETH
+                (bool sent,) = msg.sender.call{value: msg.value}("");
+                require(sent, "refund failed");
+            }
         }
     }
 
