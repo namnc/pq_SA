@@ -5,3 +5,4 @@ pub mod erasure;
 pub mod commitment;
 pub mod channel;
 pub mod shard;
+pub mod stealth;

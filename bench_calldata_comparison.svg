@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" font-family="monospace" font-size="12">
   <rect width="800" height="500" fill="white"/>
-  <text x="400" y="30" font-size="16" font-weight="bold" text-anchor="middle">Total Calldata: Baseline ML-KEM vs pq-ibsd</text>
+  <text x="400" y="30" font-size="16" font-weight="bold" text-anchor="middle">Total Calldata: Baseline ML-KEM vs PQ-SA</text>
   <line x1="80" y1="420" x2="770" y2="420" stroke="silver"/>
   <text x="72" y="424" text-anchor="end" fill="gray">0</text>
   <line x1="80" y1="348" x2="770" y2="348" stroke="silver"/>
@@ -39,5 +39,5 @@
   <line x1="110" y1="98" x2="140" y2="98" stroke="crimson" stroke-width="2.5"/>
   <text x="148" y="102" font-size="12">Baseline (1088 B KEM ct per note)</text>
   <line x1="110" y1="120" x2="140" y2="120" stroke="steelblue" stroke-width="2.5"/>
-  <text x="148" y="124" font-size="12">pq-ibsd (KEM ct only on 1st note)</text>
+  <text x="148" y="124" font-size="12">PQ-SA (KEM ct only on 1st note)</text>
 </svg>

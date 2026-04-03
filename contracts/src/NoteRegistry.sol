@@ -129,7 +129,9 @@ contract NoteRegistry {
         require(noteCommitments[noteId] != bytes32(0), "note does not exist");
         require(!archived[noteId], "already archived");
         require(msg.value > 0, "must send archival fee");
+        archived[noteId] = true;
         _handleFee(noteId, noteCommitments[noteId]);
+        emit NoteArchived(noteId, noteCommitments[noteId], msg.sender, msg.value);
     }
 
     // =========================================================================
@@ -156,9 +158,16 @@ contract NoteRegistry {
 
     /// @notice Spend (nullify) a note. Each noteId can only be spent once.
     ///         The nullifier must be unique and is bound to the noteId.
+    ///
+    ///         KNOWN LIMITATION: This function does not authenticate the caller.
+    ///         Any address can spend any note. In a production system, this would
+    ///         require a ZK proof that the caller knows k_pairwise, or a registered
+    ///         recipient binding. For this PoC, the nullifier is assumed to be
+    ///         derived correctly off-chain by the legitimate recipient.
+    ///         The griefing risk is mitigated by the fee requirement (caller must
+    ///         have a deposited balance to pay the spend fee).
     /// @param noteId The note being spent
-    /// @param nullifier The nullifier (derived off-chain from k_pairwise + nonce).
-    ///        The contract binds this nullifier to noteId to prevent reuse.
+    /// @param nullifier The nullifier (derived off-chain from k_pairwise + nonce)
     function spendNote(uint64 noteId, bytes32 nullifier) external {
         require(noteCommitments[noteId] != bytes32(0), "note does not exist");
         require(!spent[noteId], "note already spent");
@@ -168,14 +177,16 @@ contract NoteRegistry {
         nullifiers[nullifier] = true;
 
         uint256 fee = serverFeePerNote;
+        uint256 actualFee = 0;
         if (fee > 0 && archivalVault != address(0)) {
             require(balances[msg.sender] >= fee, "insufficient balance for fee");
             balances[msg.sender] -= fee;
+            actualFee = fee;
             (bool sent,) = archivalVault.call{value: fee}("");
             require(sent, "fee transfer failed");
         }
 
-        emit NoteSpent(noteId, nullifier, fee);
+        emit NoteSpent(noteId, nullifier, actualFee);
     }
 
     // =========================================================================
@@ -201,13 +212,13 @@ contract NoteRegistry {
     //  Internal
     // =========================================================================
 
+    /// @dev Forwards fees to vault if configured, refunds otherwise.
+    ///      Does NOT mark notes as archived — use archiveNote for that.
     function _handleFee(uint64 noteId, bytes32 commitment) internal {
         if (msg.value > 0) {
             if (archivalVault != address(0)) {
-                archived[noteId] = true;
                 (bool sent,) = archivalVault.call{value: msg.value}("");
                 require(sent, "fee transfer failed");
-                emit NoteArchived(noteId, commitment, msg.sender, msg.value);
             } else {
                 // No vault configured — refund to prevent stuck ETH
                 (bool sent,) = msg.sender.call{value: msg.value}("");

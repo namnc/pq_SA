@@ -55,8 +55,9 @@ Sender                                    Ethereum (Sepolia)                    
 ```
 pq-sa/
 ├── contracts/                  # Solidity (Foundry)
-│   ├── src/NoteRegistry.sol    #   On-chain event log (92 lines)
-│   └── test/NoteRegistry.t.sol #   6 Foundry tests
+│   ├── src/NoteRegistry.sol    #   Note-based model (28 Foundry tests)
+│   ├── src/MemoRegistry.sol    #   Hybrid stealth model (11 Foundry tests)
+│   └── test/
 ├── crates/
 │   ├── primitives/             # Core cryptographic library
 │   │   ├── src/
@@ -96,10 +97,10 @@ cargo build --release
 ### Run Tests
 
 ```bash
-# Rust: 37 tests
+# Rust: 43 tests
 cargo test --release
 
-# Solidity: 27 tests
+# Solidity: 39 tests
 cd contracts && forge test -vv
 ```
 
@@ -164,15 +165,28 @@ cargo run -p demo --release -- \
   --contract 0x07EB0C4D70041D2B4CAC38cAB9bd2360d0639E6E
 ```
 
-## On-Chain Costs (Sepolia)
+## On-Chain Costs (Anvil, measured)
 
-| Transaction | Calldata | Gas Used |
-|-------------|----------|----------|
-| Register keys (one-time) | 1,217 B (33 + 1184) | ~77K |
-| First contact | 1,769 B (epk + ct_pq + nonce + ct) | ~117K |
-| Known-pair note | 680 B (commitment + nonce + ct) | ~74K |
+### Note-based model (NoteRegistry)
 
-At 30 gwei gas price: first contact costs ~0.0035 ETH, subsequent notes ~0.0022 ETH. The contract stores `noteCommitments` on-chain to support receiver-pays archival (~22K gas SSTORE overhead per note).
+| Transaction | Calldata | Gas |
+|-------------|----------|-----|
+| Register keys (one-time) | 1,217 B | ~77K |
+| First contact | 1,769 B | ~120K |
+| Known-pair note | 680 B | ~76K |
+| Spend note | ~32 B | ~74K |
+
+### Hybrid stealth model (MemoRegistry)
+
+| Transaction | Calldata | Gas |
+|-------------|----------|-----|
+| First contact | ~1,140 B | ~59K |
+| Memo (no OMR clue) | ~18 B | ~46K |
+| Memo (52 B PVW clue) | ~70 B | ~47K |
+| ETH transfer to stealth addr | 0 B | ~21K |
+| **Per payment total** | **~70 B** | **~68K** |
+
+The hybrid model saves ~90% calldata and ~11% gas per payment vs the note-based model, while gaining Ethereum-native spend authentication (no nullifiers, no ZK).
 
 ## Protocol Details
 
@@ -459,7 +473,7 @@ Naive OMR trades cheap recipient scanning for expensive on-chain data. At scale,
 | **Gas/note** | ~74K | ~123K | **~60-75K** (projected) |
 | **Recipient scan** | O(N x S) AEADs | sublinear (digest) | **sublinear** |
 
-PoC B depends on a BFV depth benchmark (composed depth 8-10 in a budget of 14) that has not yet been run. If it fails, PoC A remains standalone.
+PoC B depth benchmark passed: 1 level consumed out of 14 budget (13 spare). See [pq_SA_OMR](https://github.com/namnc/pq_SA_OMR). If it fails, PoC A remains standalone.
 
 ### Summary
 
@@ -526,7 +540,32 @@ The server can always add hardware funded by the attacker's own fees. This is th
 
 EIP-4844 blobs are pruned after ~18 days. The sender fee covers FHE processing; the spend fee covers long-term archival via the server or EthStorage (~$0.0001/note for decentralized persistence). For production, the OMR server can act as an ERC-4337 paymaster, bundling privacy relay + archival + OMR into one recipient subscription.
 
-The contract supports both fee types simultaneously (20 Foundry tests).
+The contract supports both fee types simultaneously (28 Foundry tests).
+
+## Hybrid Model: Pairwise Channel + Stealth Address
+
+The repo includes a **hybrid stealth address model** that combines pairwise channels (PQ key exchange) with classical stealth addresses (authenticated spending). This eliminates the need for on-chain nullifiers and ZK proofs.
+
+```
+First contact:   hybrid KEM → k_pairwise (one-time, 1,769 B)
+Per payment:     stealth_addr = HKDF(k_pairwise, nonce) → secp256k1 address
+                 sender sends ETH to stealth_addr
+                 sender posts memo(nonce, optional pvw_clue) → ~46K gas
+Recipient:       derives stealth_sk from k_pairwise + nonce
+                 signs tx from stealth_addr (Ethereum-native auth)
+```
+
+| | Note-based (NoteRegistry) | Hybrid (MemoRegistry) |
+|--|--------------------------|----------------------|
+| Spend auth | Unauthenticated (PoC) / ZK (production) | **Ethereum signature** (native) |
+| Calldata per payment | 680 B | **~50 B** (nonce + optional PVW clue) |
+| Gas per payment | ~76K | **~46K** (memo) + 21K (ETH transfer) |
+| Nullifiers | Needed | **Not needed** |
+| ZK proofs | Needed for production auth | **Not needed** |
+
+**PQ scope**: The stealth address uses classical secp256k1 for spending. For full PQ spending, Ethereum needs PQ transaction signatures (EIP-7932). Our scope is PQ KEM optimization for key exchange and note discovery — the stealth address derivation from `k_pairwise` is PQ-secure.
+
+The hybrid model is implemented in `primitives/src/stealth.rs` (6 tests) and `contracts/src/MemoRegistry.sol` (11 Foundry tests).
 
 ## Security Considerations
 
@@ -545,7 +584,7 @@ The contract supports both fee types simultaneously (20 Foundry tests).
 
 ## Test Coverage
 
-**37 Rust tests + 27 Foundry tests = 64 total**
+**43 Rust tests + 39 Foundry tests = 82 total**
 
 | Module | Tests | Coverage |
 |--------|-------|----------|

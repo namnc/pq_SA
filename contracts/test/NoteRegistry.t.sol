@@ -106,7 +106,8 @@ contract NoteRegistryTest is Test {
         vm.prank(sender);
         registry.postFirstContact{value: 0.001 ether}(keccak256("p"), new bytes(100));
         assertEq(vault.balance, vaultBefore + 0.001 ether);
-        assertTrue(registry.archived(0));
+        // Post-time fee does NOT mark as archived (that's archiveNote's job)
+        assertFalse(registry.archived(0));
     }
 
     function test_feeRefundedWhenNoVault() public {

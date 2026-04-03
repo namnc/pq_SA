@@ -43,8 +43,10 @@ impl Sidecar {
     ) -> Vec<Option<ShardWithHmac>> {
         let mut result: Vec<Option<ShardWithHmac>> = vec![None; total_servers];
         for &sid in server_ids {
+            let idx = sid as usize;
+            if idx >= total_servers { continue; } // bounds check
             if let Some(shard) = self.read_shard(note_id, sid) {
-                result[sid as usize] = Some(shard);
+                result[idx] = Some(shard);
             }
         }
         result
