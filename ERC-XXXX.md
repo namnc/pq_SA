@@ -1,9 +1,9 @@
 ---
 eip: XXXX
-title: Post-Quantum Private Note Registry with Pairwise Channels
-description: Interface for PQ-safe private note encryption, pairwise channel establishment, and server-incentivized note discovery on Ethereum.
-author: NN (@nn)
-discussions-to: https://ethereum-magicians.org/t/erc-xxxx-pq-private-note-registry
+title: Post-Quantum Key Exchange for Stealth Addresses
+description: Extension of ERC-5564/6538 for ML-KEM-based stealth addresses with viewing/spending separation, plus an optional pairwise channel optimization.
+author: NN (@namnc)
+discussions-to: https://ethereum-magicians.org/t/erc-xxxx-pq-key-exchange-stealth-addresses
 status: Draft
 type: Standards Track
 category: ERC
@@ -13,29 +13,19 @@ requires: 5564, 6538
 
 ## Abstract
 
-This ERC defines an interface for **post-quantum private note encryption and discovery** on Ethereum. It standardizes:
+This ERC extends ERC-5564 (Stealth Addresses) and ERC-6538 (Stealth Meta-Address Registry) with post-quantum key material. It standardizes:
 
-1. A key registry for hybrid PQ key material (classical EC + ML-KEM)
-2. A two-phase note posting protocol: first-contact (KEM ciphertext) and known-pair (symmetric-only)
-3. A subscription and pay-on-spend model for server-incentivized note archival and oblivious message retrieval
+1. A key registry for PQ stealth meta-addresses (classical spending key + ML-KEM viewing key)
+2. A direct ML-KEM stealth address protocol preserving viewing/spending separation via EC scalar addition
+3. An optional pairwise channel optimization that amortizes the ML-KEM ciphertext overhead
 
-Unlike ERC-5564/6538 stealth addresses which derive one-time addresses via ECDH, this standard uses **persistent pairwise channels** — an architectural necessity for post-quantum KEM schemes that lack read-only (viewing) key subsets.
+The core insight: replace ECDH with ML-KEM for shared secret computation, but keep EC scalar addition (`stealth_sk = spending_sk + hash(ss)`) for stealth key derivation. This preserves the classical security model where a viewing key holder can detect payments but cannot spend.
 
 ## Motivation
 
-Current privacy standards on Ethereum (ERC-5564 stealth addresses, ERC-6538 stealth meta-address registry) rely on ECDH, which is broken by quantum computers. ML-KEM (FIPS 203) provides post-quantum key encapsulation, but introduces a structural constraint: **the decapsulation key is the full secret**. There is no way to derive a read-only viewing key from the private key.
+ERC-5564 stealth addresses rely on ECDH, which is broken by quantum computers. ML-KEM (FIPS 203) provides post-quantum key encapsulation, but previous PQ stealth proposals (e.g., SPECTER) lose viewing/spending separation by deriving `stealth_sk = hash(ss || spending_pk)` — since `spending_pk` is public, the viewing key holder can spend.
 
-This means:
-
-- **Stealth addresses don't work with ML-KEM.** The recipient cannot delegate scanning to a viewer without giving away the ability to spend.
-- **Pairwise channels become necessary.** Once a sender and recipient establish a shared symmetric key, subsequent notes use only symmetric encryption (ChaCha20-Poly1305). The expensive KEM operation (1,088 B ciphertext) happens once per sender-recipient pair, not per note.
-- **Server-assisted discovery is needed.** Without viewing keys, oblivious message retrieval (OMR) with homomorphic encryption becomes the practical path for scalable note discovery.
-
-This ERC standardizes the on-chain interface so that:
-- Wallets can register PQ keys in a canonical format
-- Applications can post and discover private notes interoperably
-- OMR servers can index notes and serve recipients without learning note contents
-- Payment for archival and discovery is flexible (sender-pays, receiver-pays, subscription)
+This ERC preserves the separation by using EC scalar addition for the stealth key derivation, identical to the classical ERC-5564 approach. The ML-KEM ciphertext (1,088 B) replaces the ECDH ephemeral key (33 B) — an optional pairwise channel optimization amortizes this to a one-time cost.
 
 ## Specification
 
@@ -43,22 +33,22 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Definitions
 
-- **First contact**: The initial note between a sender-recipient pair. Contains a KEM ciphertext that establishes a shared symmetric key (pairwise key).
-- **Known-pair note**: A subsequent note on an established pairwise channel. Contains only symmetric ciphertext — no KEM material.
-- **Pairwise key**: A shared symmetric key derived from a hybrid KEM (e.g., ECDH + ML-KEM, combined via HKDF).
-- **Commitment**: A binding hash of the note plaintext (e.g., SHA-256 or Poseidon).
-- **Nullifier**: A value derived from the pairwise key and note nonce, revealed when spending to prevent double-spend.
-- **Scheme ID**: A byte identifying the cryptographic suite (key types, KEM algorithm, AEAD).
+- **Viewing key**: ML-KEM-768 decapsulation key. Used to compute shared secrets for payment detection. Safe to delegate.
+- **Spending key**: secp256k1 private key. Used to derive stealth private keys and sign transactions. MUST remain private.
+- **Stealth public key**: `spending_pk + hash(shared_secret) * G`. Computable by anyone with the shared secret and spending public key.
+- **Stealth private key**: `spending_sk + hash(shared_secret)`. Computable only by the spending key holder.
+- **View tag**: `hash(shared_secret)[0]`. A 1-byte tag that filters 99.6% of non-matching announcements.
+- **Pairwise key**: A shared symmetric key established via hybrid KEM (ECDH + ML-KEM) during first contact.
 
 ### Scheme IDs
 
-| Scheme ID | Classical | PQ KEM | AEAD | Key sizes |
-|-----------|-----------|--------|------|-----------|
-| 0x01 | secp256k1 ECDH | ML-KEM-768 | ChaCha20-Poly1305 | pkEc: 33 B, ekKem: 1184 B |
-| 0x02 | secp256k1 ECDH | ML-KEM-1024 | ChaCha20-Poly1305 | pkEc: 33 B, ekKem: 1568 B |
-| 0x03 | (reserved) | (reserved) | (reserved) | future PQ algorithms |
+| Scheme ID | Key exchange | Stealth derivation | Ciphertext size |
+|-----------|-------------|-------------------|-----------------|
+| 0x01 | ECDH (secp256k1) | EC scalar addition | 33 B (classical, existing ERC-5564) |
+| 0x02 | ML-KEM-768 | EC scalar addition | 1,088 B (direct PQ replacement) |
+| 0x03 | ECDH + ML-KEM-768 hybrid | EC scalar addition | 1,121 B (first contact only) |
 
-Implementers MAY define additional scheme IDs. Scheme ID 0x00 is reserved.
+Scheme 0x02 is the direct PQ replacement. Scheme 0x03 adds transitional ECDH security and enables pairwise channel optimization.
 
 ### Interface
 
@@ -67,244 +57,154 @@ Implementers MAY define additional scheme IDs. Scheme ID 0x00 is reserved.
 pragma solidity ^0.8.24;
 
 /// @title IERC_XXXX_KeyRegistry
-/// @notice Registry for post-quantum key material.
+/// @notice Registry for PQ stealth meta-addresses.
 interface IERC_XXXX_KeyRegistry {
 
-    /// @notice Emitted when a recipient registers their public keys.
-    /// @param registrant The address that registered keys
+    /// @notice Emitted when a recipient registers their stealth meta-address.
+    /// @param registrant The registering address
     /// @param schemeId Cryptographic scheme identifier
-    /// @param pkClassical Classical public key (e.g., 33 B compressed secp256k1)
-    /// @param ekPQ Post-quantum encapsulation key (e.g., 1184 B ML-KEM-768)
+    /// @param spendingPk Classical spending public key (33 B compressed secp256k1)
+    /// @param viewingEk PQ viewing encapsulation key (1,184 B for ML-KEM-768)
     event KeysRegistered(
         address indexed registrant,
         uint8 indexed schemeId,
-        bytes pkClassical,
-        bytes ekPQ
+        bytes spendingPk,
+        bytes viewingEk
     );
 
-    /// @notice Register public keys for a given scheme.
-    /// @param schemeId Cryptographic scheme identifier
-    /// @param pkClassical Classical public key bytes
-    /// @param ekPQ Post-quantum encapsulation key bytes
+    /// @notice Register a PQ stealth meta-address.
     function registerKeys(
         uint8 schemeId,
-        bytes calldata pkClassical,
-        bytes calldata ekPQ
-    ) external;
-
-    /// @notice Register keys on behalf of another address (with signature).
-    /// @param registrant The address to register for
-    /// @param schemeId Cryptographic scheme identifier
-    /// @param pkClassical Classical public key bytes
-    /// @param ekPQ Post-quantum encapsulation key bytes
-    /// @param signature EIP-712 or EIP-1271 signature from registrant
-    function registerKeysOnBehalf(
-        address registrant,
-        uint8 schemeId,
-        bytes calldata pkClassical,
-        bytes calldata ekPQ,
-        bytes calldata signature
+        bytes calldata spendingPk,
+        bytes calldata viewingEk
     ) external;
 }
 
-/// @title IERC_XXXX_NoteRegistry
-/// @notice Registry for posting and discovering private notes via pairwise channels.
-interface IERC_XXXX_NoteRegistry {
+/// @title IERC_XXXX_Announcer
+/// @notice Announces stealth address payments for recipient discovery.
+interface IERC_XXXX_Announcer {
 
-    /// @notice Emitted when a sender initiates a new pairwise channel.
-    /// @param noteId Sequential note identifier
-    /// @param epoch Current epoch
+    /// @notice Emitted for each stealth address payment.
     /// @param schemeId Cryptographic scheme used
-    /// @param commitment Binding hash of the note plaintext
-    /// @param payload Packed first-contact data (ephemeral key + KEM ciphertext + nonce + AEAD ciphertext)
-    event FirstContact(
-        uint64 indexed noteId,
-        uint256 indexed epoch,
+    /// @param kemCiphertext ML-KEM ciphertext (1,088 B for scheme 0x02) or
+    ///        first-contact payload (1,121 B for scheme 0x03, empty for subsequent)
+    /// @param viewTag 1-byte view tag for fast filtering
+    event Announcement(
         uint8 indexed schemeId,
-        bytes32 commitment,
-        bytes payload
+        bytes kemCiphertext,
+        uint8 viewTag
     );
 
-    /// @notice Emitted for notes on an established pairwise channel.
-    /// @param noteId Sequential note identifier
-    /// @param epoch Current epoch
-    /// @param commitment Binding hash of the note plaintext
-    /// @param nonce AEAD nonce
-    /// @param ciphertext Encrypted note data
-    event NotePosted(
-        uint64 indexed noteId,
-        uint256 indexed epoch,
-        bytes32 commitment,
+    /// @notice For scheme 0x03 pairwise: memo for subsequent payments
+    ///         (nonce only, no KEM ciphertext).
+    event Memo(
+        uint64 indexed memoId,
         bytes16 nonce,
-        bytes ciphertext
+        uint8 viewTag
     );
 
-    /// @notice Post a first-contact message to initiate a pairwise channel.
-    /// @param schemeId Cryptographic scheme identifier
-    /// @param commitment Note commitment hash
-    /// @param payload Packed first-contact data
-    function postFirstContact(
+    /// @notice Announce a stealth address payment (scheme 0x02: direct ML-KEM).
+    function announce(
         uint8 schemeId,
-        bytes32 commitment,
-        bytes calldata payload
+        bytes calldata kemCiphertext,
+        uint8 viewTag
     ) external payable;
 
-    /// @notice Post a note on an established pairwise channel.
-    /// @param commitment Note commitment hash
-    /// @param nonce AEAD nonce (16 bytes)
-    /// @param ciphertext Encrypted note data
-    function postNote(
-        bytes32 commitment,
+    /// @notice Post a pairwise memo (scheme 0x03: after first contact).
+    function postMemo(
         bytes16 nonce,
-        bytes calldata ciphertext
+        uint8 viewTag
     ) external payable;
 }
-
-/// @title IERC_XXXX_Incentives
-/// @notice Subscription and pay-on-spend model for server-incentivized note services.
-interface IERC_XXXX_Incentives {
-
-    event BalanceDeposited(address indexed account, uint256 amount);
-    event BalanceWithdrawn(address indexed account, uint256 amount);
-    event NoteSpent(uint64 indexed noteId, bytes32 nullifier, uint256 feePaid);
-
-    /// @notice Deposit ETH as subscription balance for archival and OMR services.
-    function depositBalance() external payable;
-
-    /// @notice Withdraw unused subscription balance.
-    /// @param amount Amount to withdraw in wei
-    function withdrawBalance(uint256 amount) external;
-
-    /// @notice Spend (nullify) a note. Deducts the server fee from the caller's
-    ///         balance and forwards it to the service provider.
-    /// @param noteId The note being spent
-    /// @param nullifier The nullifier (derived from pairwise key + nonce, prevents double-spend)
-    function spendNote(uint64 noteId, bytes32 nullifier) external;
-
-    /// @notice Query subscription balance.
-    /// @param account Address to query
-    /// @return balance Current balance in wei
-    function balanceOf(address account) external view returns (uint256 balance);
-}
 ```
 
-### First-Contact Payload Format
+### Stealth Address Derivation
 
-The `payload` parameter in `postFirstContact` MUST be encoded as:
-
-```
-payload = ephemeralKey || kemCiphertext || nonce || aeadCiphertext
-```
-
-| Field | Scheme 0x01 size | Description |
-|-------|-----------------|-------------|
-| `ephemeralKey` | 33 B | Compressed secp256k1 ephemeral public key |
-| `kemCiphertext` | 1,088 B | ML-KEM-768 ciphertext |
-| `nonce` | 16 B | AEAD nonce |
-| `aeadCiphertext` | variable | ChaCha20-Poly1305 encrypted note |
-
-### Epoch Semantics
-
-Implementations SHOULD track epochs for OMR digest boundaries. An epoch is RECOMMENDED to be 7,200 blocks (~1 day on mainnet). The epoch counter MUST be monotonically increasing and MUST be included in the `FirstContact` and `NotePosted` events.
-
-### Nullifier Derivation
-
-The nullifier MUST be derived deterministically from the pairwise key and note nonce to ensure double-spend prevention. The RECOMMENDED derivation is:
+For all schemes, the stealth address MUST be derived using EC scalar addition:
 
 ```
-nullifier = SHA-256("nullifier" || k_pairwise || nonce)
+shared_secret = KEM.Decapsulate(viewing_dk, ciphertext)   // or HKDF(k_pairwise, nonce)
+scalar = SHA-256("pq-sa-stealth-derive-v1" || shared_secret)
+stealth_pk = spending_pk + scalar * G
+stealth_sk = spending_sk + scalar                         // recipient only
+stealth_addr = keccak256(stealth_pk)[12..32]
+view_tag = SHA-256("pq-sa-view-tag-v1" || shared_secret)[0]
 ```
 
-The registry MUST reject a `spendNote` call if the nullifier has already been recorded.
+This derivation MUST be used for all scheme IDs. The only difference between schemes is how `shared_secret` is obtained.
 
-### Optional Extensions
+### View Tag
 
-#### Archival Fee (OPTIONAL)
+The view tag is REQUIRED for all announcements. It is the first byte of `SHA-256("pq-sa-view-tag-v1" || shared_secret)`. Recipients SHOULD check the view tag before performing full stealth address derivation, filtering ~99.6% of non-matching announcements.
 
-If `msg.value > 0` is included with `postFirstContact` or `postNote`, the implementation SHOULD forward the fee to a configured archival service address. This enables sender-pays blob persistence beyond the EIP-4844 pruning window.
+### Pairwise Channel (Scheme 0x03, OPTIONAL)
 
-#### OMR Detection Clue (OPTIONAL)
+For scheme 0x03, the first payment to a recipient uses a full hybrid KEM first contact (ECDH + ML-KEM-768). Subsequent payments reuse the established `k_pairwise`:
 
-For OMR-enabled deployments, `postNote` MAY accept an additional `pvwClue` parameter (56 B PVW detection tag) for oblivious message retrieval. This is left to future extension or a companion ERC.
+```
+First contact:  shared_secret from hybrid KEM decapsulation
+Subsequent:     shared_secret = HKDF-SHA256(k_pairwise || nonce, "pq-sa-pairwise-stealth-v1")
+```
+
+Subsequent payments emit `Memo` events (16 B nonce + 1 B view tag) instead of full `Announcement` events, reducing calldata from 1,089 B to 17 B per payment.
 
 ## Rationale
 
-### Why not extend ERC-5564/6538?
+### Why EC scalar addition?
 
-ERC-5564 stealth addresses derive one-time addresses via ECDH shared secrets. This fundamentally requires a viewing key — a key that can compute shared secrets but not spend. ML-KEM has no such key. The pairwise channel model is architecturally different: it establishes a long-lived symmetric relationship rather than deriving per-transaction addresses.
+ML-KEM is a KEM, not a Diffie-Hellman protocol. It produces a shared secret but has no algebraic structure for key derivation. By using EC scalar addition for the stealth key (`stealth_sk = spending_sk + hash(ss)`), we:
 
-ERC-6538's registry stores stealth meta-addresses (spending + viewing public keys). Our registry stores hybrid PQ key material that is 18x larger (1,217 B vs ~66 B) and serves a different purpose (KEM encapsulation vs ECDH derivation).
+1. **Preserve viewing/spending separation**: the viewing key holder computes `hash(ss)` but not `spending_sk`
+2. **Reuse ERC-5564's proven security model**: the derivation is identical, only the shared secret source changes
+3. **Keep Ethereum-native spending**: stealth addresses are secp256k1 addresses, signed normally
 
-### Why pairwise channels?
+Alternative approaches like `stealth_sk = hash(ss || spending_pk)` (used by SPECTER) break viewing/spending separation because `spending_pk` is public.
 
-BIP-47 (2015) proposed pairwise payment codes for Bitcoin — the same pattern. It was saw limited adoption classically because: (1) the 33 B ECDH ephemeral key is trivial, (2) 1-byte view tags filter 99.6% of non-matching notes, (3) viewing keys enable safe scanning delegation, and (4) stealth addresses provide full unlinkability without persistent state.
+### Why pairwise channels as optional?
 
-None of these hold for ML-KEM. The ciphertext is 1,088 B (33x larger), no view tag or viewing key exists (the decapsulation key is the full secret), and delegation requires giving away spending capability. Without pairwise channels, every PQ note repeats the 1,088 B ciphertext — a permanent 150% overhead.
+Direct ML-KEM stealth (scheme 0x02) works without pairwise channels — 1,088 B per announcement. Pairwise channels (scheme 0x03) are an optimization for active sender-recipient pairs, reducing per-payment calldata from 1,089 B to 17 B.
 
-Pairwise channels reduce the KEM overhead from per-note to per-channel: the 1,088 B appears once at first contact, then amortizes to 1,092/N bytes per note. At N>=39, PQ total calldata is less than classical. Steady-state known-pair notes (73.5K gas, 680 B) are 500 gas cheaper than classical ECDH (74K gas, 709 B) because the pairwise channel eliminated the 33 B per-note ephemeral key.
+The optimization is economically significant (32x calldata reduction) but not architecturally necessary. Wallets SHOULD implement scheme 0x02 first, then add scheme 0x03 support for frequent counterparties.
 
-### Why two fees (sender + receiver)?
+### Why not full PQ spending?
 
-In a privacy system, the contract cannot distinguish legitimate notes from spam — any content-based filtering would leak information about the traffic. The system does not try to define or detect spam. Instead, every note pays its own processing cost via two complementary fees:
-
-- **Sender fee** (non-refundable, at post time): Covers the OMR server's FHE processing cost per note. This makes posting self-funding regardless of whether the note is "legitimate" or "spam." The attacker's cost scales linearly with the attack volume, and the server can always add capacity funded by the attacker's own fees.
-
-- **Spend fee** (deducted from recipient balance, at spend time): Covers long-term archival and retrieval. The recipient deposits a subscription balance upfront; the fee is deducted when nullifying a note.
-
-A bond model (refundable if spent, forfeited if not) was considered and rejected: "unspent" is not equivalent to "spam" — legitimate notes may be slow to spend (recipient offline, small amounts, memo-only). The flat sender fee makes no such distinction.
-
-### Why scheme IDs?
-
-Post-quantum cryptography is evolving. ML-KEM-768 may be superseded by ML-KEM-1024, or by future algorithms. Scheme IDs allow the registry to support multiple key types simultaneously, enabling gradual migration without breaking existing channels.
+Stealth addresses use secp256k1 for transaction signing. Full PQ spending requires PQ signature schemes at the Ethereum protocol level (e.g., EIP-7932). This ERC focuses on the key exchange and discovery layer, which can be upgraded to PQ independently.
 
 ## Backwards Compatibility
 
-This ERC introduces new functionality and does not modify existing ERCs. It is designed to coexist with ERC-5564 and ERC-6538:
+This ERC is designed to coexist with ERC-5564 and ERC-6538:
 
-- A wallet MAY register both classical stealth meta-addresses (ERC-6538) and PQ keys (this ERC) simultaneously.
-- A sender MAY use ERC-5564 stealth addresses for classical recipients and this ERC's pairwise channels for PQ recipients.
-- The `schemeId` field prevents confusion between key types.
+- Scheme 0x01 IS classical ERC-5564. Existing wallets continue to work.
+- Schemes 0x02/0x03 add PQ alternatives without breaking existing functionality.
+- A wallet MAY register both classical (scheme 0x01) and PQ (scheme 0x02/0x03) meta-addresses simultaneously.
+- The `ERC5564Announcer` contract at `0x55649E01B5Df198D18D95b5cc5051630cfD45564` can be reused for scheme 0x02 announcements (the `kemCiphertext` field replaces `ephemeralPubKey`).
 
 ## Reference Implementation
 
-A reference implementation is available at [pq-sa](https://github.com/namnc/pq_SA) with:
+A reference implementation is available at [pq_SA](https://github.com/namnc/pq_SA):
 
-- `NoteRegistry.sol` — Solidity contract implementing all three interfaces (key registry, note posting, incentives)
-- Rust cryptographic primitives (hybrid KEM, AEAD, erasure coding, commitments)
-- End-to-end demo deployed on Sepolia at [`0x07EB0C4D70041D2B4CAC38cAB9bd2360d0639E6E`](https://sepolia.etherscan.io/address/0x07EB0C4D70041D2B4CAC38cAB9bd2360d0639E6E)
-- 37 Rust tests + 20 Foundry tests
-
-Scheme 0x01 (secp256k1 + ML-KEM-768 + ChaCha20-Poly1305) is fully implemented and tested.
+- `primitives/src/stealth.rs` — EC algebra stealth derivation (Model 1 + 2), 8 tests
+- `primitives/src/hybrid_kem.rs` — ECDH + ML-KEM-768 hybrid KEM
+- `contracts/src/MemoRegistry.sol` — Pairwise channel memo log, 11 Foundry tests
+- End-to-end Anvil demo: first contact → memo → ETH to stealth address → recipient detects and can spend
 
 ## Security Considerations
 
-### Hybrid security
+### Viewing/spending separation
 
-The first-contact KEM combines ECDH and ML-KEM-768 via HKDF. If either primitive holds, the pairwise key is secure. This provides transitional security during the migration to post-quantum cryptography.
+The viewing key (`viewing_dk`, ML-KEM decapsulation key) allows computing shared secrets and detecting payments. It does NOT allow spending. The spending key (`spending_sk`, secp256k1) is required to derive `stealth_sk = spending_sk + hash(ss)`. This separation is identical to ERC-5564's classical model.
 
-### Implicit rejection
+### Quantum security scope
 
-ML-KEM decapsulation with the wrong key returns a pseudorandom shared secret (FIPS 203 implicit rejection). The AEAD decryption then fails with overwhelming probability. This prevents oracles — a wrong-recipient decapsulation is indistinguishable from random.
+ML-KEM-768 provides NIST Level 3 post-quantum security for the key exchange. Stealth address spending uses secp256k1 ECDSA, which is quantum-vulnerable. A quantum attacker who can break secp256k1 could spend from stealth addresses whose public keys are visible on-chain. Mitigation: recipients should sweep stealth addresses promptly.
 
-### Key size and on-chain exposure
+### Key sizes
 
-ML-KEM-768 encapsulation keys are 1,184 bytes — stored on-chain in the `KeysRegistered` event. This is public information (encapsulation keys are meant to be public). The decapsulation key never appears on-chain.
+ML-KEM-768 encapsulation keys are 1,184 bytes — stored on-chain in the `KeysRegistered` event. This is public information. The decapsulation key (2,400 bytes) is the viewing key and MUST be kept confidential (or shared only with trusted scanning servers).
 
-### Nullifier privacy
+### View tag privacy
 
-The nullifier `SHA-256("nullifier" || k_pairwise || nonce)` is deterministic but unlinkable: without `k_pairwise`, the nullifier cannot be connected to the note it spends. However, the spend transaction reveals the nullifier and `noteId` together, which links them at spend time. This is inherent to any nullifier-based system.
-
-### Subscription balance privacy
-
-The `depositBalance` and `withdrawBalance` functions are called by the recipient's address, which may link deposits to spending patterns. Production deployments SHOULD use a relayer or ERC-4337 paymaster to decouple the recipient's identity from their subscription.
-
-### PQ viewing keys (open problem)
-
-ML-KEM has no read-only key subset. This means the recipient cannot delegate scanning without exposing their spending capability. Oblivious message retrieval (OMR) is the current mitigation — the server scans on behalf of the recipient under FHE, learning nothing. This is specified but not standardized in this ERC; a companion ERC for OMR interfaces is anticipated.
-
-### Blob data availability
-
-If note ciphertext is stored in EIP-4844 blobs (recommended for cost efficiency), it is pruned after ~18 days. The archival fee mechanism in `IERC_XXXX_Incentives` addresses this, but persistence depends on the archival service's reliability. On-chain commitments remain permanent regardless of blob availability.
+The view tag leaks 1 bit of information per announcement (whether the tag matches). Over many announcements, this could help narrow down the recipient. This is identical to ERC-5564's existing view tag privacy model.
 
 ## Copyright
 

@@ -1,43 +1,52 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" font-family="monospace" font-size="12">
   <rect width="800" height="500" fill="white"/>
-  <text x="400" y="30" font-size="16" font-weight="bold" text-anchor="middle">Total Calldata: Baseline ML-KEM vs PQ-SA</text>
-  <line x1="80" y1="420" x2="770" y2="420" stroke="silver"/>
-  <text x="72" y="424" text-anchor="end" fill="gray">0</text>
-  <line x1="80" y1="348" x2="770" y2="348" stroke="silver"/>
-  <text x="72" y="352" text-anchor="end" fill="gray">20285</text>
-  <line x1="80" y1="276" x2="770" y2="276" stroke="silver"/>
-  <text x="72" y="280" text-anchor="end" fill="gray">40571</text>
-  <line x1="80" y1="204" x2="770" y2="204" stroke="silver"/>
-  <text x="72" y="208" text-anchor="end" fill="gray">60857</text>
-  <line x1="80" y1="132" x2="770" y2="132" stroke="silver"/>
-  <text x="72" y="136" text-anchor="end" fill="gray">81143</text>
-  <line x1="80" y1="60" x2="770" y2="60" stroke="silver"/>
-  <text x="72" y="64" text-anchor="end" fill="gray">101429</text>
-  <text x="93.8" y="440" text-anchor="middle" fill="gray">1</text>
-  <text x="107.6" y="440" text-anchor="middle" fill="gray">2</text>
-  <text x="149" y="440" text-anchor="middle" fill="gray">5</text>
-  <text x="218" y="440" text-anchor="middle" fill="gray">10</text>
-  <text x="356" y="440" text-anchor="middle" fill="gray">20</text>
+  <text x="400" y="30" font-size="15" font-weight="bold" text-anchor="middle">Total Calldata: Classical vs Direct ML-KEM vs Pairwise</text>
+  <line x1="90" y1="420" x2="770" y2="420" stroke="silver"/>
+  <text x="82" y="424" text-anchor="end" fill="gray">0</text>
+  <line x1="90" y1="348" x2="770" y2="348" stroke="silver"/>
+  <text x="82" y="352" text-anchor="end" fill="gray">12523</text>
+  <line x1="90" y1="276" x2="770" y2="276" stroke="silver"/>
+  <text x="82" y="280" text-anchor="end" fill="gray">25046</text>
+  <line x1="90" y1="204" x2="770" y2="204" stroke="silver"/>
+  <text x="82" y="208" text-anchor="end" fill="gray">37570</text>
+  <line x1="90" y1="132" x2="770" y2="132" stroke="silver"/>
+  <text x="82" y="136" text-anchor="end" fill="gray">50093</text>
+  <line x1="90" y1="60" x2="770" y2="60" stroke="silver"/>
+  <text x="82" y="64" text-anchor="end" fill="gray">62617</text>
+  <text x="103.6" y="440" text-anchor="middle" fill="gray">1</text>
+  <text x="117.2" y="440" text-anchor="middle" fill="gray">2</text>
+  <text x="158" y="440" text-anchor="middle" fill="gray">5</text>
+  <text x="226" y="440" text-anchor="middle" fill="gray">10</text>
+  <text x="362" y="440" text-anchor="middle" fill="gray">20</text>
   <text x="770" y="440" text-anchor="middle" fill="gray">50</text>
-  <text x="400" y="490" text-anchor="middle" font-size="13">Number of Notes</text>
+  <text x="400" y="490" text-anchor="middle" font-size="13">Number of Payments</text>
   <text x="15" y="240" text-anchor="middle" font-size="13" transform="rotate(-90, 15, 240)">Total Calldata (bytes)</text>
-  <polyline points="93.8,413.7 107.6,407.5 149.0,388.7 218.0,357.4 356.0,294.8 770.0,107.0" fill="none" stroke="crimson" stroke-width="2.5"/>
-  <circle cx="93.8" cy="413.7" r="4" fill="crimson"/>
-  <circle cx="107.6" cy="407.5" r="4" fill="crimson"/>
-  <circle cx="149.0" cy="388.7" r="4" fill="crimson"/>
-  <circle cx="218.0" cy="357.4" r="4" fill="crimson"/>
-  <circle cx="356.0" cy="294.8" r="4" fill="crimson"/>
+  <polyline points="103.6,419.8 117.2,419.6 158.0,419.0 226.0,418.0 362.0,416.1 770.0,410.2" fill="none" stroke="gray" stroke-width="2.5"/>
+  <circle cx="103.6" cy="419.8" r="4" fill="gray"/>
+  <circle cx="117.2" cy="419.6" r="4" fill="gray"/>
+  <circle cx="158.0" cy="419.0" r="4" fill="gray"/>
+  <circle cx="226.0" cy="418.0" r="4" fill="gray"/>
+  <circle cx="362.0" cy="416.1" r="4" fill="gray"/>
+  <circle cx="770.0" cy="410.2" r="4" fill="gray"/>
+  <polyline points="103.6,413.7 117.2,407.5 158.0,388.7 226.0,357.4 362.0,294.8 770.0,107.0" fill="none" stroke="crimson" stroke-width="2.5"/>
+  <circle cx="103.6" cy="413.7" r="4" fill="crimson"/>
+  <circle cx="117.2" cy="407.5" r="4" fill="crimson"/>
+  <circle cx="158.0" cy="388.7" r="4" fill="crimson"/>
+  <circle cx="226.0" cy="357.4" r="4" fill="crimson"/>
+  <circle cx="362.0" cy="294.8" r="4" fill="crimson"/>
   <circle cx="770.0" cy="107.0" r="4" fill="crimson"/>
-  <polyline points="93.8,413.6 107.6,411.2 149.0,404.0 218.0,391.9 356.0,367.8 770.0,295.3" fill="none" stroke="steelblue" stroke-width="2.5"/>
-  <circle cx="93.8" cy="413.6" r="4" fill="steelblue"/>
-  <circle cx="107.6" cy="411.2" r="4" fill="steelblue"/>
-  <circle cx="149.0" cy="404.0" r="4" fill="steelblue"/>
-  <circle cx="218.0" cy="391.9" r="4" fill="steelblue"/>
-  <circle cx="356.0" cy="367.8" r="4" fill="steelblue"/>
-  <circle cx="770.0" cy="295.3" r="4" fill="steelblue"/>
-  <rect x="100" y="80" width="240" height="55" fill="white" stroke="silver" rx="4"/>
-  <line x1="110" y1="98" x2="140" y2="98" stroke="crimson" stroke-width="2.5"/>
-  <text x="148" y="102" font-size="12">Baseline (1088 B KEM ct per note)</text>
-  <line x1="110" y1="120" x2="140" y2="120" stroke="steelblue" stroke-width="2.5"/>
-  <text x="148" y="124" font-size="12">PQ-SA (KEM ct only on 1st note)</text>
+  <polyline points="103.6,413.5 117.2,413.4 158.0,413.1 226.0,412.6 362.0,411.6 770.0,408.7" fill="none" stroke="steelblue" stroke-width="2.5"/>
+  <circle cx="103.6" cy="413.5" r="4" fill="steelblue"/>
+  <circle cx="117.2" cy="413.4" r="4" fill="steelblue"/>
+  <circle cx="158.0" cy="413.1" r="4" fill="steelblue"/>
+  <circle cx="226.0" cy="412.6" r="4" fill="steelblue"/>
+  <circle cx="362.0" cy="411.6" r="4" fill="steelblue"/>
+  <circle cx="770.0" cy="408.7" r="4" fill="steelblue"/>
+  <rect x="110" y="80" width="280" height="75" fill="white" stroke="silver" rx="4"/>
+  <line x1="120" y1="96" x2="150" y2="96" stroke="gray" stroke-width="2.5"/>
+  <text x="158" y="100" font-size="11">Classical (34 B per payment)</text>
+  <line x1="120" y1="116" x2="150" y2="116" stroke="crimson" stroke-width="2.5"/>
+  <text x="158" y="120" font-size="11">Direct ML-KEM (1,089 B per payment)</text>
+  <line x1="120" y1="136" x2="150" y2="136" stroke="steelblue" stroke-width="2.5"/>
+  <text x="158" y="140" font-size="11">Pairwise (1,121 B setup + 17 B per)</text>
 </svg>
