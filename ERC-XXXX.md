@@ -23,9 +23,9 @@ The core insight: replace ECDH with ML-KEM for shared secret computation, but ke
 
 ## Motivation
 
-ERC-5564 stealth addresses rely on ECDH, which is broken by quantum computers. ML-KEM (FIPS 203) provides post-quantum key encapsulation, but previous PQ stealth proposals (e.g., SPECTER) lose viewing/spending separation by deriving `stealth_sk = hash(ss || spending_pk)` — since `spending_pk` is public, the viewing key holder can spend.
+ERC-5564 stealth addresses rely on ECDH, which is broken by quantum computers via Shor's algorithm. Stealth address announcements already on-chain are vulnerable to harvest-now-decrypt-later (HNDL).
 
-This ERC preserves the separation by using EC scalar addition for the stealth key derivation, identical to the classical ERC-5564 approach. The ML-KEM ciphertext (1,088 B) replaces the ECDH ephemeral key (33 B) — an optional pairwise channel optimization amortizes this to a one-time cost.
+ML-KEM (FIPS 203) is a drop-in replacement for ECDH as a shared secret source. The existing ERC-5564 stealth key derivation (EC scalar addition) works unchanged with ML-KEM. This ERC standardizes the replacement: the ML-KEM ciphertext (1,088 B) replaces the ECDH ephemeral key (33 B), and an optional pairwise channel optimization amortizes this to a one-time cost.
 
 ## Specification
 
@@ -152,13 +152,7 @@ Subsequent payments emit `Memo` events (16 B nonce + 1 B view tag) instead of fu
 
 ### Why EC scalar addition?
 
-ML-KEM is a KEM, not a Diffie-Hellman protocol. It produces a shared secret but has no algebraic structure for key derivation. By using EC scalar addition for the stealth key (`stealth_sk = spending_sk + hash(ss)`), we:
-
-1. **Preserve viewing/spending separation**: the viewing key holder computes `hash(ss)` but not `spending_sk`
-2. **Reuse ERC-5564's proven security model**: the derivation is identical, only the shared secret source changes
-3. **Keep Ethereum-native spending**: stealth addresses are secp256k1 addresses, signed normally
-
-Alternative approaches like `stealth_sk = hash(ss || spending_pk)` (used by SPECTER) break viewing/spending separation because `spending_pk` is public.
+EC scalar addition (`stealth_sk = spending_sk + hash(ss)`) is the same derivation used by classical ERC-5564. It works with any shared secret source — ECDH or ML-KEM — because it only requires a 32-byte shared secret as input. The stealth key derivation is independent of the KEM used to produce the shared secret.
 
 ### Why pairwise channels as optional?
 
@@ -201,6 +195,14 @@ ML-KEM-768 provides NIST Level 3 post-quantum security for the key exchange. Ste
 ### Key sizes
 
 ML-KEM-768 encapsulation keys are 1,184 bytes — stored on-chain in the `KeysRegistered` event. This is public information. The decapsulation key (2,400 bytes) is the viewing key and MUST be kept confidential (or shared only with trusted scanning servers).
+
+### Harvest-now-decrypt-later (HNDL)
+
+Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recording these today can break them with a future quantum computer, linking stealth addresses to recipients and deriving spending keys. Schemes 0x02 and 0x03 replace ECDH with ML-KEM-768 (or a hybrid), making harvested ciphertexts useless to a quantum attacker. For scheme 0x03, `k_pairwise = HKDF(ECDH_ss || ML-KEM_ss)` — the attacker must break both, and ML-KEM-768 is quantum-resistant.
+
+### Wallet recovery
+
+Recipients SHOULD derive all keys deterministically from a single seed. First contact ciphertexts are stored permanently on-chain in events. A recipient who loses their device can re-derive keys from the seed, scan `FirstContact` or `Announcement` events, decapsulate each ciphertext to recover pairwise keys, and scan subsequent memos to locate all stealth addresses. No local state beyond the seed is required.
 
 ### View tag privacy
 

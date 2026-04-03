@@ -54,6 +54,22 @@ Per payment:
   sends ETH to address(stealth_pk)
 ```
 
+### Harvest-Now-Decrypt-Later Defense
+
+Classical ERC-5564 is vulnerable to HNDL: an adversary records ECDH ephemeral keys on-chain today and breaks them later with a quantum computer, linking all stealth addresses to recipients.
+
+The hybrid KEM in the pairwise first contact defeats this. A quantum attacker can break the ECDH component but not ML-KEM-768. Since `k_pairwise = HKDF(ECDH_ss || ML-KEM_ss)`, both are required — all derived stealth addresses remain hidden.
+
+### Wallet Recovery
+
+The recipient stores only a 32-byte seed. Keys are deterministic: `seed → (spending_sk, viewing_dk)`. First contact ciphertexts are permanently on-chain. Recovery:
+
+1. Re-derive keys from seed
+2. Scan `FirstContact` events, decapsulate each → recover all `k_pairwise` values
+3. Scan `Memo` events with each `k_pairwise` → find all stealth addresses and balances
+
+No local state beyond the seed. Tested in `test_wallet_recovery_from_seed`.
+
 ### Comparison
 
 | | Classical | Direct ML-KEM | Pairwise (our optimization) |
