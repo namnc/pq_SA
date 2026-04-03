@@ -10,7 +10,7 @@ Live on Sepolia: [`0x07EB0C4D70041D2B4CAC38cAB9bd2360d0639E6E`](https://sepolia.
 
 Current Ethereum privacy systems (stealth addresses, note encryption) rely on ECDH or similar constructions that a cryptographically-relevant quantum computer would break. ML-KEM (FIPS 203) is quantum-resistant, but has no read-only key subset — the decapsulation key *is* the full secret.
 
-BIP-47 (2015) proposed pairwise payment codes for Bitcoin — the same pattern. It was saw limited adoption classically because the 33 B ECDH ephemeral key is trivial, 1-byte view tags filter 99.6% of notes, and viewing keys enable safe delegation. None of these hold for ML-KEM: the ciphertext is 1,088 B (33x larger), no view tag exists (no viewing key to derive one from), and delegation requires giving away the spending key. Pairwise channels are PQ-*necessary*, not just convenient — the classical failure of BIP-47 does not predict the PQ outcome.
+BIP-47 (2015) proposed pairwise payment codes for Bitcoin — the same pattern. It was saw limited adoption classically because the 33 B ECDH ephemeral key is trivial, 1-byte view tags filter 99.6% of notes, and viewing keys enable safe delegation. None of these hold for ML-KEM: the ciphertext is 1,088 B (33x larger), no view tag exists (no viewing key to derive one from), and delegation in ML-KEM-based designs appears to require exposing the decapsulation key, though alternative PQ constructions may find workarounds. Pairwise channels are PQ-*necessary*, not just convenient — the classical failure of BIP-47 does not predict the PQ outcome.
 
 This PoC demonstrates a hybrid approach: ECDH for transitional compatibility, ML-KEM-768 for post-quantum security, combined via HKDF-SHA256 into a single pairwise key. If either primitive holds, the channel is secure.
 
@@ -427,7 +427,7 @@ PoC A: first contact pays the KEM cost; subsequent notes don't
 
 **How OMR helps**: Oblivious Message Retrieval (Liu & Tromer, 2021) lets the sender attach a detection clue to each note. An OMR server evaluates all clues under fully-homomorphic encryption (FHE) and returns an encrypted digest (~300-400 KB) containing pertinent **note IDs**. The recipient then fetches payloads using a padded request (always k_bar=50 notes, padding with random IDs) so the sidecar sees a constant-size request with no access pattern leak. The server learns nothing.
 
-**The catch**: A standard PVW detection clue with 128-bit post-quantum security is a lattice ciphertext — roughly **2 KB per note**. This is larger than the encrypted note itself. And the ciphertext must stay on calldata too — the recipient can't move it to blobs because they don't know which notes are theirs until the OMR digest arrives.
+**The catch**: A standard PVW detection clue with 128-bit post-quantum security is a lattice ciphertext — roughly **2 KB per note**. This is larger than the encrypted note itself. And the ciphertext must stay on calldata too — the recipient can't simply move it to blobs without retrieval machinery (e.g., padded fetch or bulk forward), because they don't know which notes are theirs until the OMR digest arrives.
 
 ```
 Naive OMR: scanning is solved, but calldata gets worse
