@@ -267,7 +267,7 @@ This ERC introduces new functionality and does not modify existing ERCs. It is d
 
 ## Reference Implementation
 
-A reference implementation is available at [pq-sa](https://github.com/namnc/pq-sa) with:
+A reference implementation is available at [pq-sa](https://github.com/namnc/pq_SA) with:
 
 - `NoteRegistry.sol` — Solidity contract implementing all three interfaces (key registry, note posting, incentives)
 - Rust cryptographic primitives (hybrid KEM, AEAD, erasure coding, commitments)
