@@ -123,7 +123,7 @@ interface IERC_XXXX_Announcer {
 For all schemes, the stealth address MUST be derived using EC scalar addition:
 
 ```
-shared_secret = KEM.Decapsulate(viewing_dk, ciphertext)   // or HKDF(k_pairwise, nonce)
+shared_secret = KEM.Decapsulate(viewing_dk, ciphertext)   // or SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
 scalar = SHA-256("pq-sa-stealth-derive-v1" || shared_secret)
 stealth_pk = spending_pk + scalar * G
 stealth_sk = spending_sk + scalar                         // recipient only
@@ -143,7 +143,7 @@ For scheme 0x03, the first payment to a recipient uses a full hybrid KEM first c
 
 ```
 First contact:  shared_secret from hybrid KEM decapsulation
-Subsequent:     shared_secret = HKDF-SHA256(k_pairwise || nonce, "pq-sa-pairwise-stealth-v1")
+Subsequent:     shared_secret = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
 ```
 
 Subsequent payments emit `Memo` events (16 B nonce + 1 B view tag) instead of full `Announcement` events, reducing calldata from 1,089 B to 17 B per payment.
@@ -203,6 +203,8 @@ Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recor
 ### Wallet recovery
 
 Recipients SHOULD derive all keys deterministically from a single seed. First contact ciphertexts are stored permanently on-chain in events. A recipient who loses their device can re-derive keys from the seed, scan `FirstContact` or `Announcement` events, decapsulate each ciphertext to recover pairwise keys, and scan subsequent memos to locate all stealth addresses. No local state beyond the seed is required.
+
+The viewing/spending separation enables hardware wallet integration: `spending_sk` stays on the hardware device while `viewing_dk` is exported to software wallets for scanning. To spend from a stealth address, the software wallet sends `scalar = hash(shared_secret)` to the hardware wallet, which computes `stealth_sk = spending_sk + scalar` and signs. The hardware wallet SHOULD verify that `spending_pk + scalar * G` matches the expected stealth address before signing.
 
 ### View tag privacy
 

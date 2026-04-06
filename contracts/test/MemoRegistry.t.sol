@@ -11,7 +11,7 @@ contract MemoRegistryTest is Test {
 
     event FirstContact(uint64 indexed memoId, uint256 indexed epoch, bytes payload);
     event Memo(uint64 indexed memoId, uint256 indexed epoch, bytes16 nonce, uint8 viewTag);
-    event KeyRegistered(address indexed recipient, bytes spendingPk, bytes viewingEk);
+    event KeyRegistered(address indexed recipient, bytes spendingPk, bytes viewingPkEc, bytes viewingEk);
 
     function setUp() public {
         registry = new MemoRegistry();
@@ -19,26 +19,38 @@ contract MemoRegistryTest is Test {
 
     function test_registerKeys() public {
         vm.prank(recipient);
-        registry.registerKeys(new bytes(33), new bytes(1184));
+        registry.registerKeys(new bytes(33), new bytes(33), new bytes(1184));
         assertTrue(registry.registered(recipient));
     }
 
     function test_registerKeysRejectsBadSpendingPk() public {
         vm.prank(recipient);
         vm.expectRevert("spendingPk must be 33 bytes");
-        registry.registerKeys(new bytes(32), new bytes(1184));
+        registry.registerKeys(new bytes(32), new bytes(33), new bytes(1184));
+    }
+
+    function test_registerKeysRejectsBadViewingPkEc() public {
+        vm.prank(recipient);
+        vm.expectRevert("viewingPkEc must be 33 bytes");
+        registry.registerKeys(new bytes(33), new bytes(32), new bytes(1184));
     }
 
     function test_registerKeysRejectsBadViewingEk() public {
         vm.prank(recipient);
         vm.expectRevert("viewingEk must be 1184 bytes");
-        registry.registerKeys(new bytes(33), new bytes(100));
+        registry.registerKeys(new bytes(33), new bytes(33), new bytes(100));
     }
 
     function test_postFirstContact() public {
         vm.prank(sender);
         registry.postFirstContact(new bytes(1121));
         assertEq(registry.nextMemoId(), 1);
+    }
+
+    function test_postFirstContactRejectsBadLength() public {
+        vm.prank(sender);
+        vm.expectRevert("payload must be 1121 bytes (33 EPK + 1088 KEM ct)");
+        registry.postFirstContact(new bytes(100));
     }
 
     function test_postMemo() public {
@@ -48,14 +60,14 @@ contract MemoRegistryTest is Test {
     }
 
     function test_memoIdIncrements() public {
-        registry.postFirstContact(new bytes(100));
+        registry.postFirstContact(new bytes(1121));
         registry.postMemo(bytes16(uint128(1)), 0x01);
         registry.postMemo(bytes16(uint128(2)), 0x02);
         assertEq(registry.nextMemoId(), 3);
     }
 
     function test_epochAdvances() public {
-        registry.postFirstContact(new bytes(100));
+        registry.postFirstContact(new bytes(1121));
         assertEq(registry.currentEpoch(), 0);
         vm.roll(block.number + 7201);
         registry.postMemo(bytes16(uint128(1)), 0x01);

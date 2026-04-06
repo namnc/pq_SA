@@ -29,6 +29,7 @@ contract MemoRegistry {
     event KeyRegistered(
         address indexed recipient,
         bytes spendingPk,
+        bytes viewingPkEc,
         bytes viewingEk
     );
 
@@ -36,14 +37,20 @@ contract MemoRegistry {
         epochStartBlock = block.number;
     }
 
-    function registerKeys(bytes calldata spendingPk, bytes calldata viewingEk) external {
+    function registerKeys(
+        bytes calldata spendingPk,
+        bytes calldata viewingPkEc,
+        bytes calldata viewingEk
+    ) external {
         require(spendingPk.length == 33, "spendingPk must be 33 bytes");
+        require(viewingPkEc.length == 33, "viewingPkEc must be 33 bytes");
         require(viewingEk.length == 1184, "viewingEk must be 1184 bytes");
         registered[msg.sender] = true;
-        emit KeyRegistered(msg.sender, spendingPk, viewingEk);
+        emit KeyRegistered(msg.sender, spendingPk, viewingPkEc, viewingEk);
     }
 
     function postFirstContact(bytes calldata payload) external {
+        require(payload.length == 1121, "payload must be 1121 bytes (33 EPK + 1088 KEM ct)");
         _advanceEpoch();
         emit FirstContact(nextMemoId++, currentEpoch, payload);
     }

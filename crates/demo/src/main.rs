@@ -83,15 +83,21 @@ async fn main() -> Result<()> {
     let mut rng = ChaChaRng::from_entropy();
     let recipient_keys = hybrid_kem::RecipientKeyPair::generate(&mut rng);
 
-    let pk_ec_bytes = recipient_keys.pk_ec_bytes();
+    let spending_pk_bytes = recipient_keys.spending_pk_bytes();
+    let viewing_pk_ec_bytes = recipient_keys.viewing_pk_ec_bytes();
     let ek_kem_bytes = recipient_keys.ek_kem_bytes();
 
-    println!("  spending_pk: {}... ({} B)", hex::encode(&pk_ec_bytes[..8]), pk_ec_bytes.len());
-    println!("  viewing_ek:  {}... ({} B)", hex::encode(&ek_kem_bytes[..8]), ek_kem_bytes.len());
+    println!("  spending_pk:    {}... ({} B)", hex::encode(&spending_pk_bytes[..8]), spending_pk_bytes.len());
+    println!("  viewing_pk_ec:  {}... ({} B)", hex::encode(&viewing_pk_ec_bytes[..8]), viewing_pk_ec_bytes.len());
+    println!("  viewing_ek:     {}... ({} B)", hex::encode(&ek_kem_bytes[..8]), ek_kem_bytes.len());
 
     let recipient_contract = MemoRegistry::new(*contract.address(), &recipient_provider);
     let reg = recipient_contract
-        .registerKeys(pk_ec_bytes.to_vec().into(), ek_kem_bytes.clone().into())
+        .registerKeys(
+            spending_pk_bytes.to_vec().into(),
+            viewing_pk_ec_bytes.to_vec().into(),
+            ek_kem_bytes.clone().into(),
+        )
         .send().await?.get_receipt().await?;
     println!("  register gas: {}\n", reg.gas_used);
 
@@ -102,10 +108,12 @@ async fn main() -> Result<()> {
 
     let key_events = contract.KeyRegistered_filter().from_block(start_block).query().await?;
     let (key_event, _) = key_events.last().ok_or_else(|| eyre::eyre!("no KeyRegistered"))?;
-    let pk_ec = hybrid_kem::pk_ec_from_bytes(&key_event.spendingPk).map_err(|e| eyre::eyre!("{}", e))?;
+    let spending_pk = hybrid_kem::pk_ec_from_bytes(&key_event.spendingPk).map_err(|e| eyre::eyre!("{}", e))?;
+    let viewing_pk_ec = hybrid_kem::pk_ec_from_bytes(&key_event.viewingPkEc).map_err(|e| eyre::eyre!("{}", e))?;
     let ek_kem = hybrid_kem::ek_kem_from_bytes(&key_event.viewingEk).map_err(|e| eyre::eyre!("{}", e))?;
 
-    let (first_ct, k_pairwise) = hybrid_kem::encapsulate(&pk_ec, &ek_kem, &mut rng);
+    // Encapsulate to VIEWING key (not spending key)
+    let (first_ct, k_pairwise) = hybrid_kem::encapsulate(&viewing_pk_ec, &ek_kem, &mut rng);
     println!("  k_pairwise: {}...", hex::encode(&k_pairwise[..8]));
 
     // Pack and post first contact
@@ -125,15 +133,15 @@ async fn main() -> Result<()> {
     let mut nonce = [0u8; 16];
     rng.fill_bytes(&mut nonce);
 
-    // Derive stealth address (sender only needs spending_pk, not spending_sk)
+    // Stealth address uses SPENDING key (not viewing key)
     let sender_stealth = stealth::derive_pairwise_stealth(
-        &recipient_keys.pk_ec, None, &k_pairwise, &nonce,
+        &spending_pk, None, &k_pairwise, &nonce,
     );
     let stealth_addr = Address::from_slice(&sender_stealth.address);
     println!("  stealth address: {}", stealth_addr);
     println!("  view tag: 0x{:02x}", sender_stealth.view_tag);
 
-    // Post memo on-chain (nonce + view tag for recipient to derive the same address)
+    // Post memo on-chain
     let nonce_fixed = FixedBytes::from(nonce);
     let memo_receipt = contract
         .postMemo(nonce_fixed, sender_stealth.view_tag)
@@ -154,7 +162,7 @@ async fn main() -> Result<()> {
     // =====================================================================
     println!("--- RECIPIENT: Scanning Memos ---");
 
-    // Recipient decapsulates first contact to get k_pairwise
+    // Recipient decapsulates first contact using VIEWING keys (not spending key)
     let fc_events = contract.FirstContact_filter().from_block(start_block).query().await?;
     let (fc_event, _) = fc_events.last().ok_or_else(|| eyre::eyre!("no FirstContact"))?;
     let fc_payload = &fc_event.payload;
@@ -173,10 +181,10 @@ async fn main() -> Result<()> {
     for (event, _) in &memo_events {
         let recv_nonce: [u8; 16] = event.nonce.0;
 
-        // Derive stealth address + private key
+        // Derive stealth address using SPENDING key
         let recv_stealth = stealth::derive_pairwise_stealth(
-            &recipient_keys.pk_ec,
-            Some(&recipient_keys.sk_ec),
+            &recipient_keys.spending_pk,
+            Some(&recipient_keys.spending_sk),
             &k_recv,
             &recv_nonce,
         );
@@ -184,14 +192,12 @@ async fn main() -> Result<()> {
         let recv_addr = Address::from_slice(&recv_stealth.address);
         println!("  derived stealth: {}", recv_addr);
 
-        // Check balance
         let balance = recipient_provider.get_balance(recv_addr).await?;
         println!("  balance: {} wei", balance);
 
         if balance > U256::ZERO {
             println!("  ** PAYMENT FOUND: {} wei at {} **", balance, recv_addr);
 
-            // Recipient has stealth_sk — can sign and sweep
             let stealth_sk = recv_stealth.stealth_sk.unwrap();
             let secp = secp256k1::Secp256k1::new();
             let stealth_pk = secp256k1::PublicKey::from_secret_key(&secp, &stealth_sk);
@@ -200,9 +206,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // =====================================================================
-    //  Summary
-    // =====================================================================
     println!("\n================================================");
     println!("  Demo complete!");
     println!("  Contract:  {}", contract.address());
@@ -212,6 +215,7 @@ async fn main() -> Result<()> {
     println!("  Model: Pairwise channel + stealth address");
     println!("  Auth: Ethereum-native (no nullifiers, no ZK)");
     println!("  PQ: ECDH + ML-KEM-768 hybrid KEM");
+    println!("  Delegation: viewing keys safe to share (spending key stays local)");
     println!("================================================");
 
     Ok(())

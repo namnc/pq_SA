@@ -49,10 +49,13 @@ First contact (one-time):
   Hybrid KEM: ECDH + ML-KEM-768 → k_pairwise              ← 1,121 B (33 + 1,088)
 
 Per payment:
-  stealth_pk = spending_pk + hash(HKDF(k_pairwise, nonce)) * G
+  ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
+  stealth_pk = spending_pk + SHA-256("pq-sa-stealth-derive-v1" || ss) * G
   posts memo(nonce) on-chain                                ← 18 B
   sends ETH to address(stealth_pk)
 ```
+
+**Non-interactive**: the sender only needs the recipient's public keys from the on-chain `KeyRegistered` event. First contact and first payment can happen in the same block — no round-trip with the recipient. The recipient catches up later by scanning events.
 
 ### Harvest-Now-Decrypt-Later Defense
 
@@ -69,6 +72,20 @@ The recipient stores only a 32-byte seed. Keys are deterministic: `seed → (spe
 3. Scan `Memo` events with each `k_pairwise` → find all stealth addresses and balances
 
 No local state beyond the seed. Tested in `test_wallet_recovery_from_seed`.
+
+### Hardware Wallet Integration
+
+The viewing/spending separation maps naturally to hardware wallets:
+
+| Component | Where | Why |
+|-----------|-------|-----|
+| seed (32 B) | Hardware wallet | Derives all keys, never leaves device |
+| spending_sk | Hardware wallet | Signs stealth transactions |
+| viewing_dk | Software wallet (phone/desktop) | Scans memos, detects payments — safe to export (can't spend) |
+
+**Cross-device**: any device with `viewing_dk` can scan for payments. Only the hardware wallet can spend. A new device recovers by getting `viewing_dk` from the hardware wallet, then scanning on-chain events — zero state transfer needed.
+
+**Spending from a stealth address**: the software wallet computes `scalar = hash(shared_secret)` and sends it to the hardware wallet. The hardware wallet computes `stealth_sk = spending_sk + scalar`, verifies `spending_pk + scalar*G` matches the expected stealth address, and signs.
 
 ### Comparison
 
@@ -108,14 +125,14 @@ ETH transfer is constant (21K gas) across all models. The announcement gas is wh
 ```
 pq_SA/
 ├── contracts/
-│   ├── src/MemoRegistry.sol       Stealth address discovery log (12 Foundry tests)
+│   ├── src/MemoRegistry.sol       Stealth address discovery log (14 Foundry tests)
 │   └── test/MemoRegistry.t.sol
 ├── crates/
 │   ├── primitives/
 │   │   ├── src/
 │   │   │   ├── hybrid_kem.rs      ECDH + ML-KEM-768 hybrid KEM
 │   │   │   └── stealth.rs         EC algebra stealth derivation (Model 1 + 2)
-│   │   └── tests/e2e.rs           5 integration tests
+│   │   └── tests/e2e.rs           5 integration tests (incl. delegation safety)
 │   ├── demo/                      Full Anvil demo (stealth address flow)
 │   └── bench/                     Gas + CPU benchmarks, SVG charts
 ├── Cargo.toml
@@ -129,7 +146,7 @@ pq_SA/
 cd contracts && forge build && cd ..
 cargo build --release
 
-# Test (17 Rust + 12 Foundry = 29 total)
+# Test (18 Rust + 14 Foundry = 32 total)
 cargo test --release
 cd contracts && forge test -vv
 
@@ -183,6 +200,7 @@ cargo run -p demo --release
 - **PQ spending signatures**: Stealth addresses use secp256k1 ECDSA. Full PQ spending requires PQ signatures at the protocol level (EIP-7932). Our scope is PQ key exchange.
 - **Token transfers**: Only demonstrates native ETH. ERC-20 transfers to stealth addresses work identically — the stealth address is a standard Ethereum address.
 - **Sender privacy**: The sender's address is visible as `msg.sender` on MemoRegistry calls. Sender anonymity requires a relayer or account abstraction layer.
+- **On-chain key validation**: The contract validates key lengths but not cryptographic validity (e.g., valid secp256k1 point). Off-chain clients must re-validate keys from `KeyRegistered` events before use.
 
 ## Related Work
 

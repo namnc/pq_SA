@@ -2,7 +2,7 @@
 
 We show how to replace ECDH with ML-KEM-768 in Ethereum stealth addresses (ERC-5564) while preserving **viewing/spending key separation** via EC scalar addition. A scanning server with the viewing key can detect payments but cannot spend. We also show a pairwise channel optimization that amortizes the 1,088 B ML-KEM ciphertext to a one-time cost.
 
-**Code**: [github.com/namnc/pq_SA](https://github.com/namnc/pq_SA) (Rust + Solidity, 29 tests, Anvil demo)
+**Code**: [github.com/namnc/pq_SA](https://github.com/namnc/pq_SA) (Rust + Solidity, 32 tests, Anvil demo)
 
 ## Motivation
 
@@ -57,17 +57,21 @@ First contact (one-time):
   Hybrid KEM: ECDH(secp256k1) + ML-KEM-768 → k_pairwise    1,121 B
 
 Per payment (after first contact):
-  ss = HKDF(k_pairwise, nonce)                              derived, not on-chain
-  stealth_pk = spending_pk + hash(ss) * G                    same EC algebra
+  ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
+  stealth_pk = spending_pk + SHA-256("pq-sa-stealth-derive-v1" || ss) * G
   post memo(nonce, view_tag)                                 18 B on-chain
   send ETH to stealth address
 ```
+
+The protocol is **non-interactive**: the sender only needs the recipient's public keys from the on-chain registry. First contact and first payment can happen in the same block — no round-trip. The recipient catches up later by scanning events.
 
 The hybrid KEM provides transitional security: if either ECDH or ML-KEM holds, the pairwise key is secure.
 
 **Harvest-now-decrypt-later defense**: A quantum attacker who records the first contact ciphertext today can later break the ECDH component via Shor's algorithm — but cannot break the ML-KEM-768 component. Since `k_pairwise = HKDF(ECDH_ss || ML-KEM_ss)`, both are required. All stealth addresses derived from `k_pairwise` remain hidden.
 
 **Wallet recovery**: The recipient stores only a 32-byte seed. Keys are deterministic: `seed → (spending_sk, viewing_dk)`. First contact ciphertexts are permanently on-chain. To recover after device loss: re-derive keys from seed, scan `FirstContact` events, decapsulate each to recover all `k_pairwise` values, then scan `Memo` events to find all stealth addresses and balances. No local state beyond the seed.
+
+**Hardware wallet integration**: The viewing/spending separation maps to hardware wallets: `spending_sk` stays on the hardware device, `viewing_dk` is exported to software wallets for scanning. A new phone recovers by getting `viewing_dk` from the hardware wallet and scanning on-chain events — zero state transfer. To spend, the software wallet sends `scalar = hash(shared_secret)` to the hardware wallet, which computes `stealth_sk = spending_sk + scalar` and signs.
 
 ### Measured (Anvil)
 
@@ -96,7 +100,7 @@ In PQ, the 1,088 B ML-KEM ciphertext makes pairwise channels an economically mot
 
 ## Implementation
 
-29 tests (17 Rust + 12 Solidity). The PoC demonstrates:
+32 tests (18 Rust + 14 Solidity). The PoC demonstrates:
 - Hybrid KEM first contact → pairwise key establishment
 - Stealth address derivation with viewing/spending separation
 - Memo posting on MemoRegistry contract

@@ -320,7 +320,7 @@ fn pairwise_send_recv(
 
     // First contact
     let (ct, k_pairwise) = hybrid_kem::encapsulate(
-        &recipient.pk_ec, &recipient.ek_kem, rng,
+        &recipient.viewing_pk_ec, &recipient.ek_kem, rng,
     );
 
     // N payments using pairwise key
@@ -329,7 +329,7 @@ fn pairwise_send_recv(
         let mut nonce = [0u8; 16];
         rng.fill_bytes(&mut nonce);
         let _stealth = stealth::derive_pairwise_stealth(
-            &recipient.pk_ec, None, &k_pairwise, &nonce,
+            &recipient.spending_pk, None, &k_pairwise, &nonce,
         );
         nonces.push(nonce);
     }
@@ -340,7 +340,7 @@ fn pairwise_send_recv(
     let k_recv = hybrid_kem::decapsulate(recipient, &ct).unwrap();
     for nonce in &nonces {
         let _stealth = stealth::derive_pairwise_stealth(
-            &recipient.pk_ec, Some(&recipient.sk_ec), &k_recv, nonce,
+            &recipient.spending_pk, Some(&recipient.spending_sk), &k_recv, nonce,
         );
     }
     let recv = recv_start.elapsed().as_micros() as u64;
@@ -412,7 +412,7 @@ fn bench_scanning(rng: &mut ChaChaRng) {
     {
         let recipient = hybrid_kem::RecipientKeyPair::generate(rng);
         let (ct, _k_sender) = hybrid_kem::encapsulate(
-            &recipient.pk_ec, &recipient.ek_kem, rng,
+            &recipient.viewing_pk_ec, &recipient.ek_kem, rng,
         );
         let k_pairwise = hybrid_kem::decapsulate(&recipient, &ct).unwrap();
 
@@ -430,7 +430,7 @@ fn bench_scanning(rng: &mut ChaChaRng) {
             let mut matches = 0u32;
             for nonce in &nonces {
                 let result = stealth::derive_pairwise_stealth(
-                    &recipient.pk_ec, Some(&recipient.sk_ec), &k_pairwise, nonce,
+                    &recipient.spending_pk, Some(&recipient.spending_sk), &k_pairwise, nonce,
                 );
                 if result.view_tag == 0x42 { matches += 1; }
             }
