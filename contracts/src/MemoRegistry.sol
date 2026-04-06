@@ -61,9 +61,11 @@ contract MemoRegistry {
     }
 
     function _advanceEpoch() internal {
-        while (block.number >= epochStartBlock + BLOCKS_PER_EPOCH) {
-            currentEpoch++;
-            epochStartBlock += BLOCKS_PER_EPOCH;
+        uint256 elapsed = block.number - epochStartBlock;
+        if (elapsed >= BLOCKS_PER_EPOCH) {
+            uint256 skip = elapsed / BLOCKS_PER_EPOCH;
+            currentEpoch += skip;
+            epochStartBlock += skip * BLOCKS_PER_EPOCH;
         }
     }
 }

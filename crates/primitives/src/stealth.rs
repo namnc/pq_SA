@@ -31,13 +31,9 @@ pub fn derive_stealth_pubkey(
     shared_secret: &[u8; 32],
 ) -> (secp256k1::PublicKey, [u8; 20]) {
     let secp = secp256k1::Secp256k1::new();
-    let scalar_bytes = stealth_scalar(shared_secret);
-
-    // scalar * G → offset point
-    let offset_sk = derive_valid_scalar(&scalar_bytes);
+    let offset_sk = stealth_offset(shared_secret);
     let offset_pk = secp256k1::PublicKey::from_secret_key(&secp, &offset_sk);
 
-    // stealth_pk = spending_pk + offset_pk
     let stealth_pk = spending_pk.combine(&offset_pk)
         .expect("point addition should not produce point at infinity");
 
@@ -48,23 +44,29 @@ pub fn derive_stealth_pubkey(
 /// Derive stealth private key (recipient only — requires spending_sk).
 ///
 /// stealth_sk = spending_sk + hash(shared_secret)
+///
+/// Uses the same offset as derive_stealth_pubkey — both paths go through
+/// stealth_offset() to guarantee consistency.
 pub fn derive_stealth_privkey(
     spending_sk: &secp256k1::SecretKey,
     shared_secret: &[u8; 32],
 ) -> secp256k1::SecretKey {
-    let scalar_bytes = stealth_scalar(shared_secret);
-    let scalar = secp256k1::scalar::Scalar::from_be_bytes(scalar_bytes)
-        .expect("derive_valid_scalar guarantees valid range");
+    let offset_sk = stealth_offset(shared_secret);
+    let scalar = secp256k1::scalar::Scalar::from_be_bytes(offset_sk.secret_bytes())
+        .expect("valid SecretKey is always a valid Scalar");
     spending_sk.add_tweak(&scalar)
         .expect("scalar addition should not overflow")
 }
 
-/// Domain-separated hash for stealth scalar derivation.
-fn stealth_scalar(shared_secret: &[u8; 32]) -> [u8; 32] {
+/// Derive the stealth offset key from a shared secret.
+/// Both derive_stealth_pubkey and derive_stealth_privkey use this — guaranteeing
+/// they always produce the same offset, even on the rare rejection-sampling path.
+fn stealth_offset(shared_secret: &[u8; 32]) -> secp256k1::SecretKey {
     let mut hasher = Sha256::new();
     hasher.update(b"pq-sa-stealth-derive-v1");
     hasher.update(shared_secret);
-    hasher.finalize().into()
+    let base: [u8; 32] = hasher.finalize().into();
+    derive_valid_scalar(&base)
 }
 
 /// Derive a valid secp256k1 secret key from hash output with counter-based rejection.
