@@ -183,7 +183,7 @@ async fn main() -> Result<()> {
     for (event, _) in &memo_events {
         let recv_nonce: [u8; 16] = event.nonce.0;
 
-        // Derive stealth address using SPENDING key
+        // Derive shared secret and check view tag FIRST (filters 99.6% of non-matches)
         let recv_stealth = stealth::derive_pairwise_stealth(
             &recipient_keys.spending_pk,
             Some(&recipient_keys.spending_sk),
@@ -191,8 +191,13 @@ async fn main() -> Result<()> {
             &recv_nonce,
         );
 
+        if recv_stealth.view_tag != event.viewTag {
+            // View tag mismatch — not our memo (99.6% of non-matches caught here)
+            continue;
+        }
+
         let recv_addr = Address::from_slice(&recv_stealth.address);
-        println!("  derived stealth: {}", recv_addr);
+        println!("  derived stealth: {} (view tag matched)", recv_addr);
 
         let balance = recipient_provider.get_balance(recv_addr).await?;
         println!("  balance: {} wei", balance);

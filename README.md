@@ -209,6 +209,7 @@ cargo run -p demo --release
 - **Token transfers**: Only demonstrates native ETH. ERC-20 transfers to stealth addresses work identically — the stealth address is a standard Ethereum address.
 - **Sender privacy**: The sender's address is visible as `msg.sender` on MemoRegistry calls. Sender anonymity requires a relayer or account abstraction layer.
 - **On-chain key validation**: The contract validates key lengths but not cryptographic validity (e.g., valid secp256k1 point). Off-chain clients must re-validate keys from `KeyRegistered` events before use.
+- **Secret field visibility**: `RecipientKeyPair` exposes secret keys as public fields for PoC convenience. A production library should use opaque types with accessor methods.
 
 ## Related Work
 

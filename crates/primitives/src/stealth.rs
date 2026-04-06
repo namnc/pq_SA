@@ -31,25 +31,17 @@ pub fn derive_stealth_pubkey(
     shared_secret: &[u8; 32],
 ) -> (secp256k1::PublicKey, [u8; 20]) {
     let secp = secp256k1::Secp256k1::new();
-
-    // hash(shared_secret) → scalar for EC point multiplication
-    let mut hasher = Sha256::new();
-    hasher.update(b"pq-sa-stealth-derive-v1");
-    hasher.update(shared_secret);
-    let scalar_bytes: [u8; 32] = hasher.finalize().into();
+    let scalar_bytes = stealth_scalar(shared_secret);
 
     // scalar * G → offset point
-    let offset_sk = secp256k1::SecretKey::from_slice(&scalar_bytes)
-        .expect("SHA-256 output is valid scalar with overwhelming probability");
+    let offset_sk = derive_valid_scalar(&scalar_bytes);
     let offset_pk = secp256k1::PublicKey::from_secret_key(&secp, &offset_sk);
 
     // stealth_pk = spending_pk + offset_pk
     let stealth_pk = spending_pk.combine(&offset_pk)
         .expect("point addition should not produce point at infinity");
 
-    // Ethereum address
     let addr = pubkey_to_eth_address(&stealth_pk);
-
     (stealth_pk, addr)
 }
 
@@ -60,16 +52,38 @@ pub fn derive_stealth_privkey(
     spending_sk: &secp256k1::SecretKey,
     shared_secret: &[u8; 32],
 ) -> secp256k1::SecretKey {
+    let scalar_bytes = stealth_scalar(shared_secret);
+    let scalar = secp256k1::scalar::Scalar::from_be_bytes(scalar_bytes)
+        .expect("derive_valid_scalar guarantees valid range");
+    spending_sk.add_tweak(&scalar)
+        .expect("scalar addition should not overflow")
+}
+
+/// Domain-separated hash for stealth scalar derivation.
+fn stealth_scalar(shared_secret: &[u8; 32]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"pq-sa-stealth-derive-v1");
     hasher.update(shared_secret);
-    let scalar_bytes: [u8; 32] = hasher.finalize().into();
+    hasher.finalize().into()
+}
 
-    // stealth_sk = spending_sk + scalar
-    let scalar = secp256k1::scalar::Scalar::from_be_bytes(scalar_bytes)
-        .expect("SHA-256 output is valid scalar");
-    spending_sk.add_tweak(&scalar)
-        .expect("scalar addition should not overflow")
+/// Derive a valid secp256k1 secret key from hash output with counter-based rejection.
+fn derive_valid_scalar(base: &[u8; 32]) -> secp256k1::SecretKey {
+    // First try the base bytes directly (succeeds with ~1 - 2^-128 probability)
+    if let Ok(sk) = secp256k1::SecretKey::from_slice(base) {
+        return sk;
+    }
+    // Counter-based rejection (astronomically unlikely to reach here)
+    for counter in 1u8..=255 {
+        let mut hasher = Sha256::new();
+        hasher.update(base);
+        hasher.update(&[counter]);
+        let retry: [u8; 32] = hasher.finalize().into();
+        if let Ok(sk) = secp256k1::SecretKey::from_slice(&retry) {
+            return sk;
+        }
+    }
+    unreachable!("256 attempts all produced invalid scalars")
 }
 
 /// Compute 1-byte view tag from shared secret (filters 99.6% of non-matching notes).

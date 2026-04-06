@@ -40,84 +40,57 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 - **View tag**: `hash(shared_secret)[0]`. A 1-byte tag that filters 99.6% of non-matching announcements.
 - **Pairwise key**: A shared symmetric key established via hybrid KEM (ECDH + ML-KEM) during first contact.
 
-### Scheme IDs
-
-| Scheme ID | Key exchange | Stealth derivation | Ciphertext size |
-|-----------|-------------|-------------------|-----------------|
-| 0x01 | ECDH (secp256k1) | EC scalar addition | 33 B (classical, existing ERC-5564) |
-| 0x02 | ML-KEM-768 | EC scalar addition | 1,088 B (direct PQ replacement) |
-| 0x03 | ECDH + ML-KEM-768 hybrid | EC scalar addition | 1,121 B (first contact only) |
-
-Scheme 0x02 is the direct PQ replacement. Scheme 0x03 adds transitional ECDH security and enables pairwise channel optimization.
-
 ### Interface
+
+The reference implementation uses a pairwise hybrid KEM model (ECDH + ML-KEM-768). The interface matches the deployed `MemoRegistry` contract.
 
 ```solidity
 // SPDX-License-Identifier: CC0-1.0
 pragma solidity ^0.8.24;
 
-/// @title IERC_XXXX_KeyRegistry
-/// @notice Registry for PQ stealth meta-addresses.
-interface IERC_XXXX_KeyRegistry {
+/// @title IERC_XXXX_MemoRegistry
+/// @notice Discovery log for PQ stealth addresses with pairwise channels.
+interface IERC_XXXX_MemoRegistry {
 
     /// @notice Emitted when a recipient registers their stealth meta-address.
     /// @param registrant The registering address
-    /// @param schemeId Cryptographic scheme identifier
-    /// @param spendingPk Classical spending public key (33 B compressed secp256k1)
-    /// @param viewingPkEc EC viewing public key for ECDH (33 B compressed secp256k1, separate from spending key)
-    /// @param viewingEk PQ viewing encapsulation key (1,184 B for ML-KEM-768)
-    event KeysRegistered(
+    /// @param spendingPk Spending public key (33 B compressed secp256k1)
+    /// @param viewingPkEc EC viewing public key for hybrid KEM ECDH (33 B, separate from spending)
+    /// @param viewingEk PQ viewing encapsulation key (1,184 B ML-KEM-768)
+    event KeyRegistered(
         address indexed registrant,
-        uint8 indexed schemeId,
         bytes spendingPk,
         bytes viewingPkEc,
         bytes viewingEk
     );
 
-    /// @notice Register a PQ stealth meta-address.
+    /// @notice Emitted for hybrid KEM first contact (one-time per sender-recipient pair).
+    event FirstContact(
+        uint64 indexed memoId,
+        uint256 indexed epoch,
+        bytes payload
+    );
+
+    /// @notice Emitted for each subsequent stealth address payment.
+    event Memo(
+        uint64 indexed memoId,
+        uint256 indexed epoch,
+        bytes16 nonce,
+        uint8 viewTag
+    );
+
+    /// @notice Register a PQ stealth meta-address (3 keys).
     function registerKeys(
-        uint8 schemeId,
         bytes calldata spendingPk,
         bytes calldata viewingPkEc,
         bytes calldata viewingEk
     ) external;
-}
 
-/// @title IERC_XXXX_Announcer
-/// @notice Announces stealth address payments for recipient discovery.
-interface IERC_XXXX_Announcer {
+    /// @notice Post a hybrid KEM first contact (1,121 B = 33 EPK + 1,088 ML-KEM ct).
+    function postFirstContact(bytes calldata payload) external;
 
-    /// @notice Emitted for each stealth address payment.
-    /// @param schemeId Cryptographic scheme used
-    /// @param kemCiphertext ML-KEM ciphertext (1,088 B for scheme 0x02) or
-    ///        first-contact payload (1,121 B for scheme 0x03, empty for subsequent)
-    /// @param viewTag 1-byte view tag for fast filtering
-    event Announcement(
-        uint8 indexed schemeId,
-        bytes kemCiphertext,
-        uint8 viewTag
-    );
-
-    /// @notice For scheme 0x03 pairwise: memo for subsequent payments
-    ///         (nonce only, no KEM ciphertext).
-    event Memo(
-        uint64 indexed memoId,
-        bytes16 nonce,
-        uint8 viewTag
-    );
-
-    /// @notice Announce a stealth address payment (scheme 0x02: direct ML-KEM).
-    function announce(
-        uint8 schemeId,
-        bytes calldata kemCiphertext,
-        uint8 viewTag
-    ) external payable;
-
-    /// @notice Post a pairwise memo (scheme 0x03: after first contact).
-    function postMemo(
-        bytes16 nonce,
-        uint8 viewTag
-    ) external payable;
+    /// @notice Post a pairwise memo (nonce + view tag).
+    function postMemo(bytes16 nonce, uint8 viewTag) external;
 }
 ```
 
@@ -134,15 +107,15 @@ stealth_addr = keccak256(stealth_pk)[12..32]
 view_tag = SHA-256("pq-sa-view-tag-v1" || shared_secret)[0]
 ```
 
-This derivation MUST be used for all scheme IDs. The only difference between schemes is how `shared_secret` is obtained.
+This derivation MUST be used for both direct ML-KEM and pairwise modes. The only difference is how `shared_secret` is obtained.
 
 ### View Tag
 
 The view tag is REQUIRED for all announcements. It is the first byte of `SHA-256("pq-sa-view-tag-v1" || shared_secret)`. Recipients SHOULD check the view tag before performing full stealth address derivation, filtering ~99.6% of non-matching announcements.
 
-### Pairwise Channel (Scheme 0x03, OPTIONAL)
+### Pairwise Channel (OPTIONAL)
 
-For scheme 0x03, the first payment to a recipient uses a full hybrid KEM first contact (ECDH + ML-KEM-768). Subsequent payments reuse the established `k_pairwise`:
+The first payment to a recipient uses a full hybrid KEM first contact (ECDH + ML-KEM-768). Subsequent payments reuse the established `k_pairwise`:
 
 ```
 First contact:  shared_secret from hybrid KEM decapsulation
@@ -159,9 +132,7 @@ EC scalar addition (`stealth_sk = spending_sk + hash(ss)`) is the same derivatio
 
 ### Why pairwise channels as optional?
 
-Direct ML-KEM stealth (scheme 0x02) works without pairwise channels — 1,088 B per announcement. Pairwise channels (scheme 0x03) are an optimization for active sender-recipient pairs, reducing per-payment calldata from 1,089 B to 17 B.
-
-The optimization is economically significant (32x calldata reduction) but not architecturally necessary. Wallets SHOULD implement scheme 0x02 first, then add scheme 0x03 support for frequent counterparties.
+Direct ML-KEM stealth works without pairwise channels — 1,088 B per announcement. Pairwise channels are an optimization for active sender-recipient pairs, reducing per-payment calldata from 1,089 B to 17 B. The reference implementation demonstrates the pairwise model.
 
 ### Why not full PQ spending?
 
@@ -171,10 +142,7 @@ Stealth addresses use secp256k1 for transaction signing. Full PQ spending requir
 
 This ERC is designed to coexist with ERC-5564 and ERC-6538:
 
-- Scheme 0x01 IS classical ERC-5564. Existing wallets continue to work.
-- Schemes 0x02/0x03 add PQ alternatives without breaking existing functionality.
-- A wallet MAY register both classical (scheme 0x01) and PQ (scheme 0x02/0x03) meta-addresses simultaneously.
-- The `ERC5564Announcer` contract at `0x55649E01B5Df198D18D95b5cc5051630cfD45564` can be reused for scheme 0x02 announcements (the `kemCiphertext` field replaces `ephemeralPubKey`).
+This ERC is designed to coexist with ERC-5564 and ERC-6538. A wallet MAY register both classical and PQ meta-addresses simultaneously. The `MemoRegistry` contract is a separate deployment from the existing `ERC5564Announcer`.
 
 ## Reference Implementation
 
@@ -202,7 +170,7 @@ ML-KEM-768 encapsulation keys are 1,184 bytes — stored on-chain in the `KeysRe
 
 ### Harvest-now-decrypt-later (HNDL)
 
-Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recording these today can break them with a future quantum computer, linking stealth addresses to recipients and deriving spending keys. Schemes 0x02 and 0x03 replace ECDH with ML-KEM-768 (or a hybrid), making harvested ciphertexts useless to a quantum attacker. For scheme 0x03, `k_pairwise = HKDF(ECDH_ss || ML-KEM_ss)` — the attacker must break both, and ML-KEM-768 is quantum-resistant.
+Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recording these today can break them with a future quantum computer, linking stealth addresses to recipients and deriving spending keys. The hybrid KEM replaces ECDH with ECDH + ML-KEM-768, making harvested ciphertexts useless to a quantum attacker. `k_pairwise = HKDF(ECDH_ss || ML-KEM_ss)` — the attacker must break both, and ML-KEM-768 is quantum-resistant.
 
 ### Wallet recovery
 
