@@ -2,7 +2,7 @@
 
 **Post-Quantum Key Exchange for Ethereum Stealth Addresses**
 
-Replace ECDH with ML-KEM-768 in stealth addresses, preserving viewing/spending separation via EC scalar addition. Two models: direct ML-KEM (baseline) and pairwise channel (calldata optimization).
+Hybrid KEM (ECDH + ML-KEM-768) for Ethereum stealth addresses, preserving viewing/spending separation via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the pairwise key is secure. Two models: direct ML-KEM (baseline) and pairwise hybrid channel (calldata optimization).
 
 ## The Design
 
@@ -144,7 +144,7 @@ pq_SA/
 
 ```bash
 # Build
-cd contracts && forge build && cd ..
+cd contracts && forge install foundry-rs/forge-std --no-commit && forge build && cd ..
 cargo build --release
 
 # Test (18 Rust + 14 Foundry = 32 total)
@@ -201,15 +201,15 @@ cargo run -p demo --release
 
 - **Gas as anti-spam**: MemoRegistry is a pure event log with no access control beyond gas cost. This matches ERC-5564's `ERC5564Announcer` design — anyone can post announcements. Scanning cost scales linearly with total announcements, bounded by chain gas limits.
 - **No channel identifiers on memos**: Memos do not identify which pairwise channel they belong to. Adding a channel ID would improve scanning efficiency (skip non-matching channels) but would leak sender-recipient linkage on-chain. The current design uses view tags (1 byte, 99.6% filter rate) to reduce scanning cost without metadata leakage. For S senders × N memos, the recipient performs S × N view tag checks — each a single SHA-256 + byte comparison.
+- **Sender visibility**: The sender's `msg.sender` is visible on every transaction — this is the same in classical ERC-5564. Stealth addresses protect the **recipient**, not the sender. Sender anonymity requires a relayer or account abstraction (ERC-4337). This is not specific to pairwise channels.
 - **Demo is single-user**: The demo uses `.last()` for event queries, which is only correct for a single-user Anvil run. A production client must filter `KeyRegistered` by recipient address and try all `FirstContact` events via ML-KEM implicit rejection.
 
 ## What This PoC Does NOT Cover
 
 - **PQ spending signatures**: Stealth addresses use secp256k1 ECDSA. Full PQ spending requires PQ signatures at the protocol level (EIP-7932). Our scope is PQ key exchange.
 - **Token transfers**: Only demonstrates native ETH. ERC-20 transfers to stealth addresses work identically — the stealth address is a standard Ethereum address.
-- **Sender privacy**: The sender's address is visible as `msg.sender` on MemoRegistry calls. Sender anonymity requires a relayer or account abstraction layer.
+- **Sender privacy**: The sender's address is visible as `msg.sender` on MemoRegistry calls — same as classical ERC-5564. Stealth addresses protect recipient privacy, not sender privacy. Sender anonymity requires a relayer or account abstraction (ERC-4337).
 - **On-chain key validation**: The contract validates key lengths but not cryptographic validity (e.g., valid secp256k1 point). Off-chain clients must re-validate keys from `KeyRegistered` events before use.
-- **Secret field visibility**: `RecipientKeyPair` exposes secret keys as public fields for PoC convenience. A production library should use opaque types with accessor methods.
 
 ## Related Work
 

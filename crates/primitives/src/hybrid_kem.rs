@@ -14,14 +14,13 @@ pub const EPK_SIZE: usize = 33;
 /// A scanning server needs (viewing_sk_ec, dk_kem) to recover k_pairwise.
 /// It does NOT need spending_sk, so it cannot spend.
 pub struct RecipientKeyPair {
-    // Spending key — for stealth_sk = spending_sk + scalar. NEVER shared.
-    pub spending_sk: secp256k1::SecretKey,
+    // Secrets — private, accessed only through methods.
+    spending_sk: secp256k1::SecretKey,
+    viewing_sk_ec: secp256k1::SecretKey,
+    dk_kem: DecapsulationKey<MlKem768>,
+    // Public keys — safe to expose.
     pub spending_pk: secp256k1::PublicKey,
-    // EC viewing key — for ECDH in hybrid KEM. Safe to delegate.
-    pub viewing_sk_ec: secp256k1::SecretKey,
     pub viewing_pk_ec: secp256k1::PublicKey,
-    // ML-KEM viewing key — for PQ KEM. Safe to delegate.
-    pub dk_kem: DecapsulationKey<MlKem768>,
     pub ek_kem: EncapsulationKey<MlKem768>,
 }
 
@@ -100,6 +99,16 @@ impl RecipientKeyPair {
         let key_arr = self.ek_kem.to_bytes();
         let slice: &[u8] = key_arr.as_ref();
         slice.to_vec()
+    }
+
+    /// Access spending secret key (for stealth_sk derivation). Keep private.
+    pub fn spending_sk(&self) -> &secp256k1::SecretKey {
+        &self.spending_sk
+    }
+
+    /// Access EC viewing secret key (for hybrid KEM decapsulation). Safe to delegate.
+    pub fn viewing_sk_ec(&self) -> &secp256k1::SecretKey {
+        &self.viewing_sk_ec
     }
 }
 

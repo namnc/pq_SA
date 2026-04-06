@@ -1,6 +1,6 @@
 # Post-Quantum Key Exchange for Stealth Addresses with Viewing/Spending Separation
 
-We show how to replace ECDH with ML-KEM-768 in Ethereum stealth addresses (ERC-5564) while preserving **viewing/spending key separation** via EC scalar addition. A scanning server with the viewing key can detect payments but cannot spend. We also show a pairwise channel optimization that amortizes the 1,088 B ML-KEM ciphertext to a one-time cost.
+We show how to add ML-KEM-768 to Ethereum stealth addresses (ERC-5564) via a **hybrid KEM** (ECDH + ML-KEM-768), preserving **viewing/spending key separation** via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the shared secret is secure. A scanning server with the viewing key can detect payments but cannot spend. We also show a pairwise channel optimization that amortizes the 1,121 B hybrid ciphertext to a one-time cost.
 
 **Code**: [github.com/namnc/pq_SA](https://github.com/namnc/pq_SA) (Rust + Solidity, 32 tests, Anvil demo)
 

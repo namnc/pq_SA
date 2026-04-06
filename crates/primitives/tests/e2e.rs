@@ -27,7 +27,7 @@ fn test_first_contact_and_stealth_payment() {
 
     // Recipient derives same stealth address + private key
     let recv_stealth = stealth::derive_pairwise_stealth(
-        &recipient.spending_pk, Some(&recipient.spending_sk), &k_recipient, &nonce,
+        &recipient.spending_pk, Some(recipient.spending_sk()), &k_recipient, &nonce,
     );
 
     assert_eq!(sender_stealth.address, recv_stealth.address);
@@ -62,7 +62,7 @@ fn test_delegation_safety() {
 
     // Recipient can derive stealth_sk (spending)
     let owner_result = stealth::derive_pairwise_stealth(
-        &recipient.spending_pk, Some(&recipient.spending_sk), &k_server, &nonce,
+        &recipient.spending_pk, Some(recipient.spending_sk()), &k_server, &nonce,
     );
     assert!(owner_result.stealth_sk.is_some()); // can spend
     assert_eq!(server_result.address, owner_result.address);
@@ -137,7 +137,7 @@ fn test_multiple_payments_same_pair() {
             &recipient.spending_pk, None, &k_pairwise, &nonce,
         );
         let recv_result = stealth::derive_pairwise_stealth(
-            &recipient.spending_pk, Some(&recipient.spending_sk), &k_recv, &nonce,
+            &recipient.spending_pk, Some(recipient.spending_sk()), &k_recv, &nonce,
         );
 
         assert_eq!(sender_result.address, recv_result.address);

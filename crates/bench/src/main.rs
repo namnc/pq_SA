@@ -340,7 +340,7 @@ fn pairwise_send_recv(
     let k_recv = hybrid_kem::decapsulate(recipient, &ct).unwrap();
     for nonce in &nonces {
         let _stealth = stealth::derive_pairwise_stealth(
-            &recipient.spending_pk, Some(&recipient.spending_sk), &k_recv, nonce,
+            &recipient.spending_pk, Some(recipient.spending_sk()), &k_recv, nonce,
         );
     }
     let recv = recv_start.elapsed().as_micros() as u64;
@@ -430,7 +430,7 @@ fn bench_scanning(rng: &mut ChaChaRng) {
             let mut matches = 0u32;
             for nonce in &nonces {
                 let result = stealth::derive_pairwise_stealth(
-                    &recipient.spending_pk, Some(&recipient.spending_sk), &k_pairwise, nonce,
+                    &recipient.spending_pk, Some(recipient.spending_sk()), &k_pairwise, nonce,
                 );
                 if result.view_tag == 0x42 { matches += 1; }
             }

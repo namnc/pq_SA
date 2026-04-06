@@ -186,7 +186,7 @@ async fn main() -> Result<()> {
         // Derive shared secret and check view tag FIRST (filters 99.6% of non-matches)
         let recv_stealth = stealth::derive_pairwise_stealth(
             &recipient_keys.spending_pk,
-            Some(&recipient_keys.spending_sk),
+            Some(recipient_keys.spending_sk()),
             &k_recv,
             &recv_nonce,
         );
