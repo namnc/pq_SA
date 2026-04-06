@@ -64,11 +64,13 @@ interface IERC_XXXX_KeyRegistry {
     /// @param registrant The registering address
     /// @param schemeId Cryptographic scheme identifier
     /// @param spendingPk Classical spending public key (33 B compressed secp256k1)
+    /// @param viewingPkEc EC viewing public key for ECDH (33 B compressed secp256k1, separate from spending key)
     /// @param viewingEk PQ viewing encapsulation key (1,184 B for ML-KEM-768)
     event KeysRegistered(
         address indexed registrant,
         uint8 indexed schemeId,
         bytes spendingPk,
+        bytes viewingPkEc,
         bytes viewingEk
     );
 
@@ -76,6 +78,7 @@ interface IERC_XXXX_KeyRegistry {
     function registerKeys(
         uint8 schemeId,
         bytes calldata spendingPk,
+        bytes calldata viewingPkEc,
         bytes calldata viewingEk
     ) external;
 }
@@ -177,9 +180,10 @@ This ERC is designed to coexist with ERC-5564 and ERC-6538:
 
 A reference implementation is available at [pq_SA](https://github.com/namnc/pq_SA):
 
-- `primitives/src/stealth.rs` — EC algebra stealth derivation (Model 1 + 2), 8 tests
-- `primitives/src/hybrid_kem.rs` — ECDH + ML-KEM-768 hybrid KEM
-- `contracts/src/MemoRegistry.sol` — Pairwise channel memo log, 11 Foundry tests
+- `primitives/src/stealth.rs` — EC algebra stealth derivation (Model 1 + 2)
+- `primitives/src/hybrid_kem.rs` — ECDH + ML-KEM-768 hybrid KEM with separate viewing/spending keys
+- `contracts/src/MemoRegistry.sol` — Pairwise channel memo log
+- 32 tests (18 Rust + 14 Foundry), including delegation safety verification
 - End-to-end Anvil demo: first contact → memo → ETH to stealth address → recipient detects and can spend
 
 ## Security Considerations

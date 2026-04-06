@@ -33,6 +33,22 @@ fn derive_32(seed: &[u8; 32], label: &[u8]) -> [u8; 32] {
     out
 }
 
+/// Derive a valid secp256k1 secret key from seed using labeled HKDF with counter-based rejection.
+/// Probability of needing retry is ~1/2^128 per attempt — practically zero.
+fn derive_ec_key(seed: &[u8; 32], label: &[u8]) -> secp256k1::SecretKey {
+    for counter in 0u8..=255 {
+        let hk = Hkdf::<Sha256>::new(None, seed);
+        let mut info = label.to_vec();
+        info.push(counter);
+        let mut out = [0u8; 32];
+        hk.expand(&info, &mut out).expect("HKDF expand 32");
+        if let Ok(sk) = secp256k1::SecretKey::from_slice(&out) {
+            return sk;
+        }
+    }
+    unreachable!("256 HKDF attempts all produced invalid scalars — astronomically unlikely");
+}
+
 /// Derive a 64-byte key from seed using labeled HKDF-SHA256.
 fn derive_64(seed: &[u8; 32], label: &[u8]) -> [u8; 64] {
     let hk = Hkdf::<Sha256>::new(None, seed);
@@ -54,16 +70,12 @@ impl RecipientKeyPair {
     pub fn from_seed(seed: &[u8; 32]) -> Self {
         let secp = secp256k1::Secp256k1::new();
 
-        // Spending key (secp256k1)
-        let spending_bytes = derive_32(seed, b"pq-sa-spending-v1");
-        let spending_sk = secp256k1::SecretKey::from_slice(&spending_bytes)
-            .expect("HKDF output is valid scalar with overwhelming probability");
+        // Spending key (secp256k1) — counter-based rejection sampling
+        let spending_sk = derive_ec_key(seed, b"pq-sa-spending-v1");
         let spending_pk = secp256k1::PublicKey::from_secret_key(&secp, &spending_sk);
 
         // EC viewing key (secp256k1) — separate from spending key
-        let viewing_ec_bytes = derive_32(seed, b"pq-sa-viewing-ec-v1");
-        let viewing_sk_ec = secp256k1::SecretKey::from_slice(&viewing_ec_bytes)
-            .expect("HKDF output is valid scalar with overwhelming probability");
+        let viewing_sk_ec = derive_ec_key(seed, b"pq-sa-viewing-ec-v1");
         let viewing_pk_ec = secp256k1::PublicKey::from_secret_key(&secp, &viewing_sk_ec);
 
         // ML-KEM-768 viewing key

@@ -106,6 +106,7 @@ async fn main() -> Result<()> {
     // =====================================================================
     println!("--- SENDER: First Contact (Hybrid KEM) ---");
 
+    // Demo: takes last event. Production client must filter by intended recipient address.
     let key_events = contract.KeyRegistered_filter().from_block(start_block).query().await?;
     let (key_event, _) = key_events.last().ok_or_else(|| eyre::eyre!("no KeyRegistered"))?;
     let spending_pk = hybrid_kem::pk_ec_from_bytes(&key_event.spendingPk).map_err(|e| eyre::eyre!("{}", e))?;
@@ -162,7 +163,8 @@ async fn main() -> Result<()> {
     // =====================================================================
     println!("--- RECIPIENT: Scanning Memos ---");
 
-    // Recipient decapsulates first contact using VIEWING keys (not spending key)
+    // Demo: takes last event. Production client must try all FirstContact events
+    // and filter by successful decapsulation (ML-KEM implicit rejection handles wrong recipient).
     let fc_events = contract.FirstContact_filter().from_block(start_block).query().await?;
     let (fc_event, _) = fc_events.last().ok_or_else(|| eyre::eyre!("no FirstContact"))?;
     let fc_payload = &fc_event.payload;

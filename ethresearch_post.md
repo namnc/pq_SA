@@ -112,7 +112,8 @@ In PQ, the 1,088 B ML-KEM ciphertext makes pairwise channels an economically mot
 | ML-KEM-768 (FIPS 203) | PQ key encapsulation |
 | ECDH (secp256k1) | Transitional hybrid security + stealth derivation |
 | EC scalar addition | Viewing/spending separation |
-| HKDF-SHA256 | Pairwise stealth derivation |
+| HKDF-SHA256 | Hybrid KEM key combination, seed-to-key derivation |
+| SHA-256 (domain-separated) | Pairwise stealth derivation, view tag computation |
 
 ## Related Work
 

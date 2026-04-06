@@ -107,7 +107,7 @@ The viewing/spending separation maps naturally to hardware wallets:
 
 | Transaction | Gas (measured) | Calldata |
 |-------------|---------------|----------|
-| Register keys (one-time) | 77,314 | 1,217 B (33 + 1,184) |
+| Register keys (one-time) | 79,846 | 1,250 B (33 + 33 + 1,184) |
 | First contact (one-time per pair) | 78,578 | 1,121 B |
 | Memo (per payment) | 34,206 | 18 B |
 | ETH transfer to stealth addr | 21,000 | 0 B |
@@ -192,8 +192,15 @@ cargo run -p demo --release
 |-----------|---------|
 | ML-KEM-768 (FIPS 203) | PQ key encapsulation (NIST Level 3) |
 | ECDH (secp256k1) | Transitional hybrid security + stealth address derivation |
-| HKDF-SHA256 | Hybrid key derivation, pairwise stealth derivation |
+| HKDF-SHA256 | Hybrid KEM key combination, seed-to-key derivation |
+| SHA-256 (domain-separated) | Pairwise stealth derivation, view tag computation |
 | EC scalar addition | Viewing/spending separation (`stealth_sk = spending_sk + hash(ss)`) |
+
+## Design Decisions
+
+- **Gas as anti-spam**: MemoRegistry is a pure event log with no access control beyond gas cost. This matches ERC-5564's `ERC5564Announcer` design — anyone can post announcements. Scanning cost scales linearly with total announcements, bounded by chain gas limits.
+- **No channel identifiers on memos**: Memos do not identify which pairwise channel they belong to. Adding a channel ID would improve scanning efficiency (skip non-matching channels) but would leak sender-recipient linkage on-chain. The current design uses view tags (1 byte, 99.6% filter rate) to reduce scanning cost without metadata leakage. For S senders × N memos, the recipient performs S × N view tag checks — each a single SHA-256 + byte comparison.
+- **Demo is single-user**: The demo uses `.last()` for event queries, which is only correct for a single-user Anvil run. A production client must filter `KeyRegistered` by recipient address and try all `FirstContact` events via ML-KEM implicit rejection.
 
 ## What This PoC Does NOT Cover
 
