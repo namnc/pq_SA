@@ -65,13 +65,14 @@ The hybrid KEM in the pairwise first contact defeats this. A quantum attacker ca
 
 ### Wallet Recovery
 
-The recipient stores only a 32-byte seed. Keys are deterministic: `seed → (spending_sk, viewing_dk)`. First contact ciphertexts are permanently on-chain. Recovery:
+The recipient stores only a 32-byte seed. Keys are deterministic: `seed → (spending_sk, viewing_sk_ec, viewing_dk)`. First contact ciphertexts are permanently on-chain. Recovery:
 
 1. Re-derive keys from seed
-2. Scan `FirstContact` events, decapsulate each → recover all `k_pairwise` values
-3. Scan `Memo` events with each `k_pairwise` → find all stealth addresses and balances
+2. Scan `FirstContact` events, decapsulate each → get candidate `k_pairwise` values
+3. **Verify**: for each candidate, scan `Memo` events and check view tags. ML-KEM implicit rejection means decapsulation always returns a key — even for first contacts not addressed to you. Only genuine channels will have matching view tags among actual memos.
+4. Confirmed channels' stealth addresses → check balances, sweep
 
-No local state beyond the seed. Tested in `test_wallet_recovery_from_seed`.
+Work scales with total first contacts × memos, not just your own channels. View tags (99.6% filter) keep per-memo verification fast. Tested in `test_wallet_recovery_from_seed`.
 
 ### Hardware Wallet Integration
 

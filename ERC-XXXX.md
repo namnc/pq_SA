@@ -206,7 +206,7 @@ Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recor
 
 ### Wallet recovery
 
-Recipients SHOULD derive all keys deterministically from a single seed. First contact ciphertexts are stored permanently on-chain in events. A recipient who loses their device can re-derive keys from the seed, scan `FirstContact` or `Announcement` events, decapsulate each ciphertext to recover pairwise keys, and scan subsequent memos to locate all stealth addresses. No local state beyond the seed is required.
+Recipients SHOULD derive all keys deterministically from a single seed. First contact ciphertexts are stored permanently on-chain in events. A recipient who loses their device can re-derive keys from the seed, scan `FirstContact` or `Announcement` events, and decapsulate each ciphertext to obtain candidate pairwise keys. Due to ML-KEM implicit rejection, decapsulation always returns a key — even for first contacts not addressed to this recipient. Genuine channels MUST be verified by checking view tags against subsequent `Memo` events. Only matching channels will produce consistent view tags.
 
 The viewing/spending separation enables hardware wallet integration: `spending_sk` stays on the hardware device while `viewing_dk` is exported to software wallets for scanning. To spend from a stealth address, the software wallet sends `scalar = hash(shared_secret)` to the hardware wallet, which computes `stealth_sk = spending_sk + scalar` and signs. The hardware wallet SHOULD verify that `spending_pk + scalar * G` matches the expected stealth address before signing.
 
