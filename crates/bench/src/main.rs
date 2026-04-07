@@ -320,7 +320,7 @@ fn pairwise_send_recv(
 
     // First contact
     let (ct, k_pairwise) = hybrid_kem::encapsulate(
-        &recipient.viewing_pk_ec, &recipient.ek_kem, rng,
+        &recipient.viewing.viewing_pk_ec, &recipient.viewing.ek_kem, rng,
     );
 
     // N payments using pairwise key
@@ -329,7 +329,7 @@ fn pairwise_send_recv(
         let mut nonce = [0u8; 16];
         rng.fill_bytes(&mut nonce);
         let _stealth = stealth::derive_pairwise_stealth(
-            &recipient.spending_pk, None, &k_pairwise, &nonce,
+            &recipient.spending.spending_pk, None, &k_pairwise, &nonce,
         );
         nonces.push(nonce);
     }
@@ -337,10 +337,10 @@ fn pairwise_send_recv(
 
     // Recipient side
     let recv_start = Instant::now();
-    let k_recv = hybrid_kem::decapsulate(recipient, &ct).unwrap();
+    let k_recv = hybrid_kem::decapsulate(&recipient.viewing, &ct).unwrap();
     for nonce in &nonces {
         let _stealth = stealth::derive_pairwise_stealth(
-            &recipient.spending_pk, Some(recipient.spending_sk()), &k_recv, nonce,
+            &recipient.spending.spending_pk, Some(recipient.spending.spending_sk()), &k_recv, nonce,
         );
     }
     let recv = recv_start.elapsed().as_micros() as u64;
@@ -412,9 +412,9 @@ fn bench_scanning(rng: &mut ChaChaRng) {
     {
         let recipient = hybrid_kem::RecipientKeyPair::generate(rng);
         let (ct, _k_sender) = hybrid_kem::encapsulate(
-            &recipient.viewing_pk_ec, &recipient.ek_kem, rng,
+            &recipient.viewing.viewing_pk_ec, &recipient.viewing.ek_kem, rng,
         );
-        let k_pairwise = hybrid_kem::decapsulate(&recipient, &ct).unwrap();
+        let k_pairwise = hybrid_kem::decapsulate(&recipient.viewing, &ct).unwrap();
 
         println!("  Pairwise (HKDF + stealth derive + view tag per memo):");
         for &n in scan_counts {
@@ -430,7 +430,7 @@ fn bench_scanning(rng: &mut ChaChaRng) {
             let mut matches = 0u32;
             for nonce in &nonces {
                 let result = stealth::derive_pairwise_stealth(
-                    &recipient.spending_pk, Some(recipient.spending_sk()), &k_pairwise, nonce,
+                    &recipient.spending.spending_pk, Some(recipient.spending.spending_sk()), &k_pairwise, nonce,
                 );
                 if result.view_tag == 0x42 { matches += 1; }
             }

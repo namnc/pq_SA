@@ -83,9 +83,9 @@ async fn main() -> Result<()> {
     let mut rng = ChaChaRng::from_entropy();
     let recipient_keys = hybrid_kem::RecipientKeyPair::generate(&mut rng);
 
-    let spending_pk_bytes = recipient_keys.spending_pk_bytes();
-    let viewing_pk_ec_bytes = recipient_keys.viewing_pk_ec_bytes();
-    let ek_kem_bytes = recipient_keys.ek_kem_bytes();
+    let spending_pk_bytes = recipient_keys.spending.spending_pk_bytes();
+    let viewing_pk_ec_bytes = recipient_keys.viewing.viewing_pk_ec_bytes();
+    let ek_kem_bytes = recipient_keys.viewing.ek_kem_bytes();
 
     println!("  spending_pk:    {}... ({} B)", hex::encode(&spending_pk_bytes[..8]), spending_pk_bytes.len());
     println!("  viewing_pk_ec:  {}... ({} B)", hex::encode(&viewing_pk_ec_bytes[..8]), viewing_pk_ec_bytes.len());
@@ -163,15 +163,16 @@ async fn main() -> Result<()> {
     // =====================================================================
     println!("--- RECIPIENT: Scanning Memos ---");
 
-    // Demo: takes last event. Production client must try all FirstContact events
-    // and filter by successful decapsulation (ML-KEM implicit rejection handles wrong recipient).
+    // Demo: takes last event. Production client must decapsulate ALL FirstContact events
+    // (ML-KEM implicit rejection always returns a key, even for wrong recipient) and then
+    // verify each candidate k_pairwise against Memo view tags to identify genuine channels.
     let fc_events = contract.FirstContact_filter().from_block(start_block).query().await?;
     let (fc_event, _) = fc_events.last().ok_or_else(|| eyre::eyre!("no FirstContact"))?;
     let fc_payload = &fc_event.payload;
     let epk: [u8; 33] = fc_payload[..33].try_into()?;
     let ct_pq = fc_payload[33..33 + 1088].to_vec();
     let fc = hybrid_kem::FirstContactCiphertext { epk, ct_pq };
-    let k_recv = hybrid_kem::decapsulate(&recipient_keys, &fc)
+    let k_recv = hybrid_kem::decapsulate(&recipient_keys.viewing, &fc)
         .map_err(|e| eyre::eyre!("{}", e))?;
     println!("  k_pairwise: {}...", hex::encode(&k_recv[..8]));
     assert_eq!(k_recv, k_pairwise);
@@ -185,8 +186,8 @@ async fn main() -> Result<()> {
 
         // Derive shared secret and check view tag FIRST (filters 99.6% of non-matches)
         let recv_stealth = stealth::derive_pairwise_stealth(
-            &recipient_keys.spending_pk,
-            Some(recipient_keys.spending_sk()),
+            &recipient_keys.spending.spending_pk,
+            Some(recipient_keys.spending.spending_sk()),
             &k_recv,
             &recv_nonce,
         );

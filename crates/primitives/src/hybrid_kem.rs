@@ -8,32 +8,34 @@ pub const DOMAIN: &[u8] = b"pq-sa-v1";
 pub const PAIRWISE_KEY_LEN: usize = 32;
 pub const EPK_SIZE: usize = 33;
 
-/// Recipient key bundle: spending keypair (for stealth derivation) +
-/// viewing keypair (EC + ML-KEM, for hybrid KEM — safe to delegate).
-///
-/// A scanning server needs (viewing_sk_ec, dk_kem) to recover k_pairwise.
-/// It does NOT need spending_sk, so it cannot spend.
-pub struct RecipientKeyPair {
-    // Secrets — private, accessed only through methods.
-    spending_sk: secp256k1::SecretKey,
+// =========================================================================
+//  Type-safe key separation: ViewingKeys vs SpendingKey
+// =========================================================================
+
+/// Viewing keys — safe to delegate to a scanning server.
+/// Contains EC viewing key (for ECDH) and ML-KEM decapsulation key.
+/// CANNOT derive stealth spending keys.
+pub struct ViewingKeys {
     viewing_sk_ec: secp256k1::SecretKey,
-    dk_kem: DecapsulationKey<MlKem768>,
-    // Public keys — safe to expose.
-    pub spending_pk: secp256k1::PublicKey,
     pub viewing_pk_ec: secp256k1::PublicKey,
+    dk_kem: DecapsulationKey<MlKem768>,
     pub ek_kem: EncapsulationKey<MlKem768>,
 }
 
-/// Derive a 32-byte key from seed using labeled HKDF-SHA256.
-fn derive_32(seed: &[u8; 32], label: &[u8]) -> [u8; 32] {
-    let hk = Hkdf::<Sha256>::new(None, seed);
-    let mut out = [0u8; 32];
-    hk.expand(label, &mut out).expect("HKDF expand 32");
-    out
+/// Spending key — NEVER shared. Used only for stealth_sk derivation.
+pub struct SpendingKey {
+    spending_sk: secp256k1::SecretKey,
+    pub spending_pk: secp256k1::PublicKey,
+}
+
+/// Full recipient key bundle. Only the recipient holds this.
+/// For delegation, extract viewing_keys() and share only that.
+pub struct RecipientKeyPair {
+    pub viewing: ViewingKeys,
+    pub spending: SpendingKey,
 }
 
 /// Derive a valid secp256k1 secret key from seed using labeled HKDF with counter-based rejection.
-/// Probability of needing retry is ~1/2^128 per attempt — practically zero.
 fn derive_ec_key(seed: &[u8; 32], label: &[u8]) -> secp256k1::SecretKey {
     for counter in 0u8..=255 {
         let hk = Hkdf::<Sha256>::new(None, seed);
@@ -45,10 +47,9 @@ fn derive_ec_key(seed: &[u8; 32], label: &[u8]) -> secp256k1::SecretKey {
             return sk;
         }
     }
-    unreachable!("256 HKDF attempts all produced invalid scalars — astronomically unlikely");
+    unreachable!("256 HKDF attempts all produced invalid scalars");
 }
 
-/// Derive a 64-byte key from seed using labeled HKDF-SHA256.
 fn derive_64(seed: &[u8; 32], label: &[u8]) -> [u8; 64] {
     let hk = Hkdf::<Sha256>::new(None, seed);
     let mut out = [0u8; 64];
@@ -56,41 +57,17 @@ fn derive_64(seed: &[u8; 32], label: &[u8]) -> [u8; 64] {
     out
 }
 
-impl RecipientKeyPair {
-    /// Generate from entropy. Internally generates a random seed and calls from_seed().
-    pub fn generate(rng: &mut rand_chacha::ChaChaRng) -> Self {
-        let mut seed = [0u8; 32];
-        rng.fill_bytes(&mut seed);
-        Self::from_seed(&seed)
-    }
-
-    /// Deterministic key derivation from a 32-byte seed using labeled HKDF.
-    /// Each key material is derived with a distinct label — stable across library versions.
-    pub fn from_seed(seed: &[u8; 32]) -> Self {
-        let secp = secp256k1::Secp256k1::new();
-
-        // Spending key (secp256k1) — counter-based rejection sampling
-        let spending_sk = derive_ec_key(seed, b"pq-sa-spending-v1");
-        let spending_pk = secp256k1::PublicKey::from_secret_key(&secp, &spending_sk);
-
-        // EC viewing key (secp256k1) — separate from spending key
-        let viewing_sk_ec = derive_ec_key(seed, b"pq-sa-viewing-ec-v1");
-        let viewing_pk_ec = secp256k1::PublicKey::from_secret_key(&secp, &viewing_sk_ec);
-
-        // ML-KEM-768 viewing key
-        let kem_seed_bytes = derive_64(seed, b"pq-sa-viewing-kem-v1");
-        let dk_kem = DecapsulationKey::<MlKem768>::from_seed(
-            Seed::try_from(kem_seed_bytes.as_slice()).expect("64-byte seed"),
-        );
-        let ek_kem = dk_kem.encapsulation_key().clone();
-
-        Self { spending_sk, spending_pk, viewing_sk_ec, viewing_pk_ec, dk_kem, ek_kem }
+impl SpendingKey {
+    pub fn spending_sk(&self) -> &secp256k1::SecretKey {
+        &self.spending_sk
     }
 
     pub fn spending_pk_bytes(&self) -> [u8; EPK_SIZE] {
         self.spending_pk.serialize()
     }
+}
 
+impl ViewingKeys {
     pub fn viewing_pk_ec_bytes(&self) -> [u8; EPK_SIZE] {
         self.viewing_pk_ec.serialize()
     }
@@ -100,15 +77,36 @@ impl RecipientKeyPair {
         let slice: &[u8] = key_arr.as_ref();
         slice.to_vec()
     }
+}
 
-    /// Access spending secret key (for stealth_sk derivation). Keep private.
-    pub fn spending_sk(&self) -> &secp256k1::SecretKey {
-        &self.spending_sk
+impl RecipientKeyPair {
+    /// Generate from entropy.
+    pub fn generate(rng: &mut rand_chacha::ChaChaRng) -> Self {
+        let mut seed = [0u8; 32];
+        rng.fill_bytes(&mut seed);
+        Self::from_seed(&seed)
     }
 
-    /// Access EC viewing secret key (for hybrid KEM decapsulation). Safe to delegate.
-    pub fn viewing_sk_ec(&self) -> &secp256k1::SecretKey {
-        &self.viewing_sk_ec
+    /// Deterministic key derivation from a 32-byte seed using labeled HKDF.
+    pub fn from_seed(seed: &[u8; 32]) -> Self {
+        let secp = secp256k1::Secp256k1::new();
+
+        let spending_sk = derive_ec_key(seed, b"pq-sa-spending-v1");
+        let spending_pk = secp256k1::PublicKey::from_secret_key(&secp, &spending_sk);
+
+        let viewing_sk_ec = derive_ec_key(seed, b"pq-sa-viewing-ec-v1");
+        let viewing_pk_ec = secp256k1::PublicKey::from_secret_key(&secp, &viewing_sk_ec);
+
+        let kem_seed_bytes = derive_64(seed, b"pq-sa-viewing-kem-v1");
+        let dk_kem = DecapsulationKey::<MlKem768>::from_seed(
+            Seed::try_from(kem_seed_bytes.as_slice()).expect("64-byte seed"),
+        );
+        let ek_kem = dk_kem.encapsulation_key().clone();
+
+        Self {
+            spending: SpendingKey { spending_sk, spending_pk },
+            viewing: ViewingKeys { viewing_sk_ec, viewing_pk_ec, dk_kem, ek_kem },
+        }
     }
 }
 
@@ -138,7 +136,6 @@ fn hybrid_kdf(ss_ec: &[u8], ss_pq: &[u8]) -> [u8; PAIRWISE_KEY_LEN] {
 }
 
 /// Sender encapsulates to recipient's VIEWING keys (not spending key).
-/// The ECDH is with viewing_pk_ec — safe to delegate.
 pub fn encapsulate(
     viewing_pk_ec: &secp256k1::PublicKey,
     recipient_ek_kem: &EncapsulationKey<MlKem768>,
@@ -146,12 +143,10 @@ pub fn encapsulate(
 ) -> (FirstContactCiphertext, [u8; PAIRWISE_KEY_LEN]) {
     let secp = secp256k1::Secp256k1::new();
 
-    // ECDH with viewing key (not spending key)
     let (esk, epk) = secp.generate_keypair(rng);
     let ecdh_point = secp256k1::ecdh::shared_secret_point(viewing_pk_ec, &esk);
     let ss_ec = &ecdh_point[..32];
 
-    // ML-KEM-768
     let mut m_bytes = [0u8; 32];
     rng.fill_bytes(&mut m_bytes);
     let (ct_pq, ss_pq) = recipient_ek_kem.encapsulate_deterministic(
@@ -169,22 +164,21 @@ pub fn encapsulate(
     (ct, k_pairwise)
 }
 
-/// Recipient decapsulates using VIEWING keys only.
-/// Does NOT require spending_sk — safe for delegated scanning.
+/// Decapsulate using VIEWING keys only. Does NOT require spending key.
+/// This is the function a scanning server calls — it accepts ViewingKeys,
+/// not RecipientKeyPair, enforcing the trust boundary at the type level.
 pub fn decapsulate(
-    recipient: &RecipientKeyPair,
+    viewing: &ViewingKeys,
     ct: &FirstContactCiphertext,
 ) -> Result<[u8; PAIRWISE_KEY_LEN], &'static str> {
-    // ECDH with viewing EC key (NOT spending key)
     let epk = secp256k1::PublicKey::from_slice(&ct.epk)
         .map_err(|_| "invalid ephemeral public key")?;
-    let ecdh_point = secp256k1::ecdh::shared_secret_point(&epk, &recipient.viewing_sk_ec);
+    let ecdh_point = secp256k1::ecdh::shared_secret_point(&epk, &viewing.viewing_sk_ec);
     let ss_ec = &ecdh_point[..32];
 
-    // ML-KEM decapsulation
     let ct_pq = ml_kem_768::Ciphertext::try_from(ct.ct_pq.as_slice())
         .map_err(|_| "invalid ML-KEM ciphertext")?;
-    let ss_pq = recipient.dk_kem.decapsulate(&ct_pq);
+    let ss_pq = viewing.dk_kem.decapsulate(&ct_pq);
 
     let ss_pq_ref: &[u8] = ss_pq.as_ref();
     Ok(hybrid_kdf(ss_ec, ss_pq_ref))
@@ -200,9 +194,8 @@ mod tests {
     fn test_roundtrip() {
         let mut rng = ChaChaRng::seed_from_u64(42);
         let recipient = RecipientKeyPair::generate(&mut rng);
-        // Sender encapsulates to VIEWING key
-        let (ct, k_sender) = encapsulate(&recipient.viewing_pk_ec, &recipient.ek_kem, &mut rng);
-        let k_recipient = decapsulate(&recipient, &ct).unwrap();
+        let (ct, k_sender) = encapsulate(&recipient.viewing.viewing_pk_ec, &recipient.viewing.ek_kem, &mut rng);
+        let k_recipient = decapsulate(&recipient.viewing, &ct).unwrap();
         assert_eq!(k_sender, k_recipient);
     }
 
@@ -211,8 +204,8 @@ mod tests {
         let mut rng = ChaChaRng::seed_from_u64(42);
         let r1 = RecipientKeyPair::generate(&mut rng);
         let r2 = RecipientKeyPair::generate(&mut rng);
-        let (ct, k_sender) = encapsulate(&r1.viewing_pk_ec, &r1.ek_kem, &mut rng);
-        let k_wrong = decapsulate(&r2, &ct).unwrap();
+        let (ct, k_sender) = encapsulate(&r1.viewing.viewing_pk_ec, &r1.viewing.ek_kem, &mut rng);
+        let k_wrong = decapsulate(&r2.viewing, &ct).unwrap();
         assert_ne!(k_sender, k_wrong);
     }
 
@@ -221,24 +214,42 @@ mod tests {
         let seed = [99u8; 32];
         let r1 = RecipientKeyPair::from_seed(&seed);
         let r2 = RecipientKeyPair::from_seed(&seed);
-        assert_eq!(r1.spending_pk_bytes(), r2.spending_pk_bytes());
-        assert_eq!(r1.viewing_pk_ec_bytes(), r2.viewing_pk_ec_bytes());
-        assert_eq!(r1.ek_kem_bytes(), r2.ek_kem_bytes());
+        assert_eq!(r1.spending.spending_pk_bytes(), r2.spending.spending_pk_bytes());
+        assert_eq!(r1.viewing.viewing_pk_ec_bytes(), r2.viewing.viewing_pk_ec_bytes());
+        assert_eq!(r1.viewing.ek_kem_bytes(), r2.viewing.ek_kem_bytes());
     }
 
     #[test]
     fn test_spending_and_viewing_keys_differ() {
         let seed = [42u8; 32];
         let r = RecipientKeyPair::from_seed(&seed);
-        assert_ne!(r.spending_pk_bytes(), r.viewing_pk_ec_bytes());
+        assert_ne!(r.spending.spending_pk_bytes(), r.viewing.viewing_pk_ec_bytes());
     }
 
     #[test]
     fn test_ciphertext_sizes() {
         let mut rng = ChaChaRng::seed_from_u64(0);
         let recipient = RecipientKeyPair::generate(&mut rng);
-        let (ct, _) = encapsulate(&recipient.viewing_pk_ec, &recipient.ek_kem, &mut rng);
+        let (ct, _) = encapsulate(&recipient.viewing.viewing_pk_ec, &recipient.viewing.ek_kem, &mut rng);
         assert_eq!(ct.epk.len(), 33);
         assert_eq!(ct.ct_pq.len(), 1088);
+    }
+
+    #[test]
+    fn test_decapsulate_takes_viewing_only() {
+        // This test verifies the type-level separation:
+        // decapsulate() accepts &ViewingKeys, NOT &RecipientKeyPair.
+        // A scanning server with only ViewingKeys can decapsulate but cannot access spending_sk.
+        let mut rng = ChaChaRng::seed_from_u64(42);
+        let recipient = RecipientKeyPair::generate(&mut rng);
+
+        // Extract viewing keys (what a scanning server would receive)
+        let viewing = &recipient.viewing;
+
+        let (ct, k_sender) = encapsulate(&viewing.viewing_pk_ec, &viewing.ek_kem, &mut rng);
+        let k_server = decapsulate(viewing, &ct).unwrap();
+        assert_eq!(k_sender, k_server);
+
+        // ViewingKeys has no spending_sk field or method — type system enforces separation
     }
 }
