@@ -125,10 +125,16 @@ pub struct FirstContactCiphertext {
     pub ct_pq: Vec<u8>,
 }
 
-fn hybrid_kdf(ss_ec: &[u8], ss_pq: &[u8]) -> [u8; PAIRWISE_KEY_LEN] {
-    let mut ikm = Vec::with_capacity(ss_ec.len() + ss_pq.len());
+/// Hybrid KDF: combines ECDH shared secret, ML-KEM shared secret, and the
+/// ephemeral public key (including parity byte) into the pairwise key.
+/// Binding epk prevents parity-flip replay: flipping the compressed parity byte
+/// (0x02 ↔ 0x03) would give the same ECDH x-coordinate but a different epk,
+/// producing a different k_pairwise.
+fn hybrid_kdf(ss_ec: &[u8], ss_pq: &[u8], epk: &[u8]) -> [u8; PAIRWISE_KEY_LEN] {
+    let mut ikm = Vec::with_capacity(ss_ec.len() + ss_pq.len() + epk.len());
     ikm.extend_from_slice(ss_ec);
     ikm.extend_from_slice(ss_pq);
+    ikm.extend_from_slice(epk);
     let hk = Hkdf::<Sha256>::new(None, &ikm);
     let mut k = [0u8; PAIRWISE_KEY_LEN];
     hk.expand(DOMAIN, &mut k).expect("HKDF expand failed");
@@ -158,11 +164,12 @@ pub fn encapsulate(
     );
 
     let ss_pq_ref: &[u8] = ss_pq.as_ref();
-    let k_pairwise = hybrid_kdf(ss_ec, ss_pq_ref);
+    let epk_bytes = epk.serialize();
+    let k_pairwise = hybrid_kdf(ss_ec, ss_pq_ref, &epk_bytes);
 
     let ct_pq_ref: &[u8] = ct_pq.as_ref();
     let ct = FirstContactCiphertext {
-        epk: epk.serialize(),
+        epk: epk_bytes,
         ct_pq: ct_pq_ref.to_vec(),
     };
     (ct, k_pairwise)
@@ -186,7 +193,7 @@ pub fn decapsulate(
     let ss_pq = viewing.dk_kem.decapsulate(&ct_pq);
 
     let ss_pq_ref: &[u8] = ss_pq.as_ref();
-    Ok(hybrid_kdf(ss_ec, ss_pq_ref))
+    Ok(hybrid_kdf(ss_ec, ss_pq_ref, &ct.epk))
 }
 
 #[cfg(test)]
