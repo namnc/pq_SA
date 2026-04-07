@@ -144,6 +144,10 @@ pub fn encapsulate(
     let secp = secp256k1::Secp256k1::new();
 
     let (esk, epk) = secp.generate_keypair(rng);
+    // shared_secret_point returns the full uncompressed point (x || y).
+    // We take the x-coordinate (first 32 bytes) as the ECDH shared secret.
+    // This is safe here because it's immediately fed into HKDF alongside
+    // the ML-KEM secret — the KDF absorbs any bias in the x-coordinate.
     let ecdh_point = secp256k1::ecdh::shared_secret_point(viewing_pk_ec, &esk);
     let ss_ec = &ecdh_point[..32];
 
@@ -173,6 +177,7 @@ pub fn decapsulate(
 ) -> Result<[u8; PAIRWISE_KEY_LEN], &'static str> {
     let epk = secp256k1::PublicKey::from_slice(&ct.epk)
         .map_err(|_| "invalid ephemeral public key")?;
+    // x-coordinate of ECDH point — fed into HKDF with ML-KEM secret (see encapsulate comment)
     let ecdh_point = secp256k1::ecdh::shared_secret_point(&epk, &viewing.viewing_sk_ec);
     let ss_ec = &ecdh_point[..32];
 

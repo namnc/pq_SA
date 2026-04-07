@@ -2,7 +2,7 @@
 
 **Post-Quantum Key Exchange for Ethereum Stealth Addresses**
 
-Hybrid KEM (ECDH + ML-KEM-768) for Ethereum stealth addresses, preserving viewing/spending separation via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the pairwise key is secure. Two models: direct ML-KEM (baseline) and pairwise hybrid channel (calldata optimization).
+**Experimental research PoC.** Hybrid KEM (ECDH + ML-KEM-768) for Ethereum stealth addresses, preserving viewing/spending separation via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the pairwise key is secure. Two models: direct ML-KEM (baseline) and pairwise hybrid channel (calldata optimization). Depends on pre-release `ml-kem = 0.3.0-rc.1` (unaudited).
 
 ## The Design
 
@@ -82,9 +82,11 @@ The viewing/spending separation maps naturally to hardware wallets:
 |-----------|-------|-----|
 | seed (32 B) | Hardware wallet | Derives all keys, never leaves device |
 | spending_sk | Hardware wallet | Signs stealth transactions |
-| viewing_dk | Software wallet (phone/desktop) | Scans memos, detects payments — safe to export (can't spend) |
+| viewing bundle (viewing_sk_ec + dk_kem) | Software wallet (phone/desktop) | Scans memos, detects payments — safe to export (can't spend) |
 
-**Cross-device**: any device with `viewing_dk` can scan for payments. Only the hardware wallet can spend. A new device recovers by getting `viewing_dk` from the hardware wallet, then scanning on-chain events — zero state transfer needed.
+The viewing bundle contains **both** the EC viewing secret (for ECDH) and the ML-KEM decapsulation key — both are needed to recover `k_pairwise` from first contacts. Exporting only one is insufficient.
+
+**Cross-device**: any device with the viewing bundle can scan for payments. Only the hardware wallet can spend. A new device recovers by getting the viewing bundle from the hardware wallet, then scanning on-chain events — zero state transfer needed.
 
 **Spending from a stealth address**: the software wallet computes `scalar = hash(shared_secret)` and sends it to the hardware wallet. The hardware wallet computes `stealth_sk = spending_sk + scalar`, verifies `spending_pk + scalar*G` matches the expected stealth address, and signs.
 
@@ -106,20 +108,22 @@ The viewing/spending separation maps naturally to hardware wallets:
 
 ## Measured Gas (Anvil)
 
-| Transaction | Gas (measured) | Calldata |
-|-------------|---------------|----------|
+Calldata sizes below are **payload bytes** (the application data), not ABI-encoded wire calldata. ABI encoding adds function selector (4 B) and padding overhead, so actual on-wire calldata is larger. Gas numbers are measured on Anvil and include ABI overhead.
+
+| Transaction | Gas (measured) | Payload |
+|-------------|---------------|---------|
 | Register keys (one-time) | 79,846 | 1,250 B (33 + 33 + 1,184) |
 | First contact (one-time per pair) | 78,578 | 1,121 B |
-| Memo (per payment) | 34,206 | 18 B |
+| Memo (per payment) | 34,206 | 17 B (16 nonce + 1 view tag) |
 | ETH transfer to stealth addr | 21,000 | 0 B |
 
 ETH transfer is constant (21K gas) across all models. The announcement gas is what varies:
 
-| Model | Announcement gas | Calldata |
-|-------|-----------------|----------|
+| Model | Announcement gas | Payload |
+|-------|-----------------|---------|
 | Classical ERC-5564 | ~47K (estimated) | 34 B |
 | Direct ML-KEM | ~61K (estimated) | 1,089 B |
-| Pairwise (per payment) | **34,206 (measured)** | **18 B** |
+| Pairwise (per payment) | **34,206 (measured)** | **17 B** |
 
 ## Project Structure
 
