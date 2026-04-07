@@ -126,6 +126,7 @@ Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational
 
 ## Related Work
 
+- [Platus](https://docs.platus.xyz/architecture/quantum-security) — Hybrid KEM (Baby Jubjub + ML-KEM-1024) for encrypted notes. Same transitional hybrid approach; NIST Level 5 (1,568 B ct). No pairwise channels or OMR.
 - [ERC-5564](https://eips.ethereum.org/EIPS/eip-5564) — Stealth Addresses (classical ECDH)
 - [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) — Stealth Meta-Address Registry
 - [FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf) — ML-KEM standard

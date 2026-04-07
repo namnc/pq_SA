@@ -227,6 +227,7 @@ What changes for Aztec: curve (secp256k1 → Grumpkin), hash (SHA-256 → Poseid
 
 ## Related Work
 
+- [Platus](https://docs.platus.xyz/architecture/quantum-security) — Hybrid KEM (Baby Jubjub + ML-KEM-1024) for encrypted notes. Same transitional security idea; uses NIST Level 5 (1,568 B ct) vs our Level 3 (1,088 B). SNARK-friendly curve. No pairwise channels or OMR.
 - [ERC-5564](https://eips.ethereum.org/EIPS/eip-5564) — Stealth addresses (classical ECDH)
 - [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) — Stealth meta-address registry
 - [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final) — ML-KEM standard
