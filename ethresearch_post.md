@@ -115,6 +115,13 @@ In PQ, the 1,088 B ML-KEM ciphertext makes pairwise channels an economically mot
 | HKDF-SHA256 | Hybrid KEM key combination, seed-to-key derivation |
 | SHA-256 (domain-separated) | Pairwise stealth derivation, view tag computation |
 
+## Applicability to Aztec Note Discovery
+
+Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational-topics/advanced/storage/note_discovery) uses the same pattern: shared secret → tag derivation → scan. They identify OMR as a "long-term goal" that's "currently impractical." This work provides two applicable components:
+
+1. **PQ shared secret** (pq_SA): replace Grumpkin ECDH with hybrid KEM. Tag derivation stays the same — just the shared secret source becomes PQ-secure. Non-interactive first contact solves Aztec's "can't receive from unknown sender" limitation.
+2. **Practical OMR** ([pq_SA_OMR](https://github.com/namnc/pq_SA_OMR)): Regev → Pasta substitution reduces OMR signal from ~2 KB to 128 B. The curve (Grumpkin) and hash (Poseidon2) are parameter choices, not architectural constraints.
+
 ## Related Work
 
 - [ERC-5564](https://eips.ethereum.org/EIPS/eip-5564) — Stealth Addresses (classical ECDH)

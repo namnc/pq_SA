@@ -211,6 +211,19 @@ cargo run -p demo --release
 - **Sender privacy**: The sender's address is visible as `msg.sender` on MemoRegistry calls — same as classical ERC-5564. Stealth addresses protect recipient privacy, not sender privacy. Sender anonymity requires a relayer or account abstraction (ERC-4337).
 - **On-chain key validation**: The contract validates key lengths but not cryptographic validity (e.g., valid secp256k1 point). Off-chain clients must re-validate keys from `KeyRegistered` events before use.
 
+## Applicability to Aztec Note Discovery
+
+Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational-topics/advanced/storage/note_discovery) system uses the same architecture: a shared secret (Grumpkin ECDH) produces tags for filtering, and recipients scan tagged notes. Aztec explicitly calls OMR a "long-term goal" that's "currently impractical."
+
+| Aztec concept | pq_SA equivalent |
+|---|---|
+| Grumpkin ECDH shared secret | Hybrid KEM `k_pairwise` (PQ-secure) |
+| Poseidon2 tag derivation | SHA-256 view tag (swappable) |
+| "Can't receive from unknown sender" | First contact (non-interactive, same-block) |
+| "OMR — currently impractical" | [pq_SA_OMR](https://github.com/namnc/pq_SA_OMR): Regev → Pasta (~128 B vs ~2 KB) |
+
+What changes for Aztec: curve (secp256k1 → Grumpkin), hash (SHA-256 → Poseidon2), per-contract siloed tags. These are parameter choices — the hybrid KEM + EC scalar addition architecture is curve-agnostic.
+
 ## Related Work
 
 - [ERC-5564](https://eips.ethereum.org/EIPS/eip-5564) — Stealth addresses (classical ECDH)
