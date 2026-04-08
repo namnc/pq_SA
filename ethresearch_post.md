@@ -98,7 +98,9 @@ Sender                          On-chain                    Recipient/Server
 
 The hybrid KEM provides transitional security: if either ECDH or ML-KEM holds, the pairwise key is secure. The KDF binds the full ephemeral key (including parity byte) to prevent replay: `k_pairwise = HKDF(ECDH_ss || ML-KEM_ss || epk, "pq-sa-v1")`.
 
-**Nonce handling**: each memo uses a random 16-byte nonce (128-bit collision resistance — negligible collision probability at 2^64 nonces). The nonce is posted on-chain and used as input to the domain-separated SHA-256 derivation. Replay protection: the same (k_pairwise, nonce) pair always produces the same stealth address, so a replayed memo just re-derives the same address — no new funds are at risk. The nonce should be unique per payment to avoid address reuse, which would aid traffic analysis (an observer could correlate transactions to the same address).
+**Nonce handling**: each memo uses a 16-byte nonce. Collision resistance is 128 bits (negligible collision probability at 2^64 nonces). The nonce is posted on-chain and used as input to the domain-separated SHA-256 derivation. Replay protection: the same (k_pairwise, nonce) pair always produces the same stealth address — no new funds are at risk from replay. The nonce **must** be unique per payment: reuse produces the same stealth address, linking two payments on-chain and breaking privacy for that pair.
+
+Wallet implementations should use a **monotonic counter** (not random) as the nonce to prevent reuse from state rollback, backup restore, or bad RNG. On recovery, the wallet derives the next safe counter from the number of `Memo` events found on-chain for that channel. Tradeoff: a counter leaks payment ordering (observer knows which memo is newer); random nonces don't. The protocol is agnostic — works with either approach.
 
 ### Privacy Tradeoff vs Classical
 
