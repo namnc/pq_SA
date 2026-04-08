@@ -7,9 +7,11 @@ We show how to add ML-KEM-768 ([FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NI
 
 ## Motivation
 
-ERC-5564 stealth addresses use ECDH for shared secret computation. A quantum computer breaks ECDH via Shor's algorithm. Privacy migration is more urgent than signature migration: signatures protect the future, but stealth address announcements already on-chain are vulnerable to harvest-now-decrypt-later (HNDL). An adversary recording today's ECDH ephemeral keys can break them later with a quantum computer, link all stealth addresses to recipients, and derive spending keys.
+ERC-5564 stealth addresses use ECDH for shared secret computation. A quantum computer breaks ECDH via Shor's algorithm. Recent developments compress the timeline: [Google's March 2026 research](https://words.filippo.io/crqc-timeline/) dramatically revised down the qubit requirements for breaking 256-bit elliptic curves (including secp256k1), and [Oratomic's paper](https://words.filippo.io/crqc-timeline/) shows ~10,000 physical qubits may suffice with neutral-atom architectures. Filippo Valsorda (Go crypto lead) now sets a **2029 deadline**: *"the bet is not 'are you 100% sure a CRQC will exist in 2030?', the bet is 'are you 100% sure a CRQC will NOT exist in 2030?'"*
 
-ML-KEM (FIPS 203) is the NIST-standardized post-quantum KEM. Replacing ECDH with ML-KEM for shared secret computation is straightforward — ML-KEM produces a shared secret just like ECDH, and the existing ERC-5564 stealth address derivation (EC scalar addition) works unchanged.
+Privacy migration is more urgent than signature migration: signatures protect the future, but stealth address announcements **already on-chain** are vulnerable to harvest-now-decrypt-later (HNDL). Every ECDH ephemeral key posted today is a commitment that becomes breakable if a CRQC arrives. The migration window may be as short as 33 months.
+
+ML-KEM ([FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf)) is the NIST-standardized post-quantum KEM. Replacing ECDH with ML-KEM for shared secret computation is straightforward — ML-KEM produces a shared secret just like ECDH, and the existing ERC-5564 stealth address derivation (EC scalar addition) works unchanged. Valsorda recommends "ML-KEM for key exchange (hybrid acceptable during transition)" — exactly our approach.
 
 ## Notation
 
@@ -171,8 +173,8 @@ In PQ, the 1,088 B ML-KEM ciphertext makes pairwise channels an economically mot
 ## Scope and Limitations
 
 - **PQ key exchange**: ML-KEM-768 (NIST Level 3). Quantum-secure.
-- **Stealth address spending**: secp256k1 ECDSA. Quantum-vulnerable. Full PQ spending requires PQ transaction signatures at the Ethereum protocol level (EIP-7932). Our scope is the key exchange layer — composable with future PQ signature schemes.
-- **Stealth address lifespan**: recipients should sweep promptly to minimize the window for quantum attacks on the spending key.
+- **Stealth address spending**: secp256k1 ECDSA. Quantum-vulnerable — Google's 2026 research shows 256-bit EC curves breakable in minutes on superconducting architectures. Full PQ spending requires PQ transaction signatures at the Ethereum protocol level (EIP-7932). Our scope is the key exchange layer — composable with future PQ signature schemes.
+- **Stealth address lifespan**: recipients should sweep promptly. With a potential 2029 CRQC timeline, stealth addresses holding funds with exposed public keys are at direct risk. Sweeping moves funds to a fresh address whose public key is not yet on-chain.
 - **Dependency**: `ml-kem = 0.3.0-rc.1` (pre-release, unaudited). Experimental research PoC.
 
 ## Implementation
@@ -222,6 +224,7 @@ Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational
 
 ## Related Work
 
+- [CRQC Timeline](https://words.filippo.io/crqc-timeline/) — Filippo Valsorda, 2026. CRQC by ~2029; Google/Oratomic revise qubit requirements downward for secp256k1.
 - [Platus](https://docs.platus.xyz/architecture/quantum-security) — Hybrid KEM (Baby Jubjub + ML-KEM-1024) for encrypted notes. NIST Level 5. No pairwise channels or OMR.
 - [ERC-5564](https://eips.ethereum.org/EIPS/eip-5564) — Stealth Addresses (classical ECDH)
 - [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) — Stealth Meta-Address Registry
