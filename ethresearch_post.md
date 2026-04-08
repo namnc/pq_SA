@@ -239,5 +239,6 @@ Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational
 
 ## Acknowledgements
 
+- Hy Ngo — Review and audit
 - Vikas — Sepolia ETH for testnet deployment
 - Keewoo Lee — Discussion on PQ privacy

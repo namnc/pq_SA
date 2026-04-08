@@ -241,6 +241,7 @@ What changes for Aztec: curve (secp256k1 → Grumpkin), hash (SHA-256 → Poseid
 
 ## Acknowledgements
 
+- Hy Ngo — Review and audit
 - Vikas — Sepolia ETH for testnet deployment
 - Keewoo Lee — Discussion on PQ privacy
 
