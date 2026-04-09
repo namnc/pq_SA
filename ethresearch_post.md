@@ -7,7 +7,7 @@ We show how to add ML-KEM-768 ([FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NI
 
 ## Motivation
 
-ERC-5564 stealth addresses use ECDH for shared secret computation. A quantum computer breaks ECDH via Shor's algorithm. Recent developments compress the timeline: [Google's March 2026 research](https://words.filippo.io/crqc-timeline/) dramatically revised down the qubit requirements for breaking 256-bit elliptic curves (including secp256k1), and [Oratomic's paper](https://words.filippo.io/crqc-timeline/) shows ~10,000 physical qubits may suffice with neutral-atom architectures. Filippo Valsorda (Go crypto lead) now sets a **2029 deadline**: *"the bet is not 'are you 100% sure a CRQC will exist in 2030?', the bet is 'are you 100% sure a CRQC will NOT exist in 2030?'"*
+ERC-5564 stealth addresses use ECDH for shared secret computation. A quantum computer breaks ECDH via Shor's algorithm. Recent developments compress the timeline: Google's 2026 research shows [~25,000 physical qubits may suffice](https://scottaaronson.blog/?p=8669) to break 256-bit elliptic curves (including secp256k1) — down from millions previously estimated. Scott Aaronson: *"maybe a year saved"* on CRQC, *"people should really get on upgrading to quantum-resistant cryptography."* [Oratomic's paper](https://words.filippo.io/crqc-timeline/) shows ~10,000 physical qubits with neutral-atom architectures. Filippo Valsorda (Go crypto lead) now sets a **2029 deadline**: *"the bet is not 'are you 100% sure a CRQC will exist in 2030?', the bet is 'are you 100% sure a CRQC will NOT exist in 2030?'"*
 
 Privacy migration is more urgent than signature migration: signatures protect the future, but stealth address announcements **already on-chain** are vulnerable to harvest-now-decrypt-later (HNDL). Every ECDH ephemeral key posted today is a commitment that becomes breakable if a CRQC arrives. The migration window may be as short as 33 months.
 
@@ -209,6 +209,24 @@ In PQ, the 1,088 B ML-KEM ciphertext makes pairwise channels an economically mot
 | Hybrid (transitional) | — | No | Yes | **Yes** |
 | OMR support | No | No | No | **Yes** ([pq_SA_OMR](https://github.com/namnc/pq_SA_OMR)) |
 
+## Privacy Protocol Landscape
+
+Every major private transfer protocol uses ECDH-based key exchange for note encryption — all vulnerable to HNDL:
+
+| Protocol | Note Discovery | Delegated? | PQ? |
+|----------|---------------|------------|-----|
+| **Zcash** | Trial decrypt all outputs | No (compact blocks, local decrypt) | No |
+| **Penumbra** | Fuzzy Message Detection + trial decrypt | Yes (coarse filter delegated) | No |
+| **Railgun** | Trial decrypt (local WASM) | No | No |
+| **Umbra** | ECDH + view tag + subgraph indexing | Semi (Graph Protocol) | No |
+| **Nocturne** (defunct) | ECDH trial decrypt | No | No |
+| **Panther** | ECDH trial decrypt | No | No |
+| **Manta** | Viewing key trial decrypt | No | No |
+
+The universal pattern: **ECDH key exchange → encrypted note → trial decrypt**. This work upgrades the first step (ECDH → hybrid KEM) for HNDL defense. [pq_SA_OMR](https://github.com/namnc/pq_SA_OMR) optimizes the scanning step (trial decrypt → OMR via Pasta-4 transciphering). Both apply to any protocol in this table — the curve and hash are parameter choices.
+
+Penumbra's S-FMD is the only deployed scanning delegation, but it leaks probabilistic detection to the server. True OMR (fully oblivious) is not deployed anywhere yet.
+
 ## Applicability to Aztec Note Discovery
 
 Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational-topics/advanced/storage/note_discovery) uses the same pattern: shared secret → tag derivation → scan. They identify OMR as a "long-term goal" that's "currently impractical." This work provides two applicable components:
@@ -226,7 +244,8 @@ Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational
 
 ## Related Work
 
-- [CRQC Timeline](https://words.filippo.io/crqc-timeline/) — Filippo Valsorda, 2026. CRQC by ~2029; Google/Oratomic revise qubit requirements downward for secp256k1.
+- [CRQC Timeline](https://words.filippo.io/crqc-timeline/) — Filippo Valsorda, 2026. CRQC by ~2029.
+- [Quantum bombshells](https://scottaaronson.blog/?p=8669) — Scott Aaronson, 2026. Google: ~25K physical qubits for 256-bit EC curves.
 - [Platus](https://docs.platus.xyz/architecture/quantum-security) — Hybrid KEM (Baby Jubjub + ML-KEM-1024) for encrypted notes. NIST Level 5. No pairwise channels or OMR.
 - [ERC-5564](https://eips.ethereum.org/EIPS/eip-5564) — Stealth Addresses (classical ECDH)
 - [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) — Stealth Meta-Address Registry
