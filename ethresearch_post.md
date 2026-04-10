@@ -166,6 +166,10 @@ Pairwise breaks even with classical after ~3 payments and saves ~39% gas over di
 
 A recipient can register both classical (ERC-5564 ECDH) and PQ (hybrid KEM) meta-addresses simultaneously. The registry stores both; legacy senders use the ECDH key, newer senders use the hybrid KEM. Over time, the ecosystem migrates. Key rotation: the recipient re-registers with new viewing keys; old first contacts remain decryptable with the old keys (which the seed can re-derive). Revocation is implicit — a new registration supersedes the old one.
 
+## Direct ML-KEM as Default
+
+For wallets prioritizing simplicity, direct ML-KEM (Model 1) is a stateless alternative: fresh encapsulation per payment, 1,089 B on-chain, no first contact, no k_pairwise, no nonce management. Gas is ~82K per payment vs ~55K for pairwise — 49% more, but zero complexity. A `registerKeysOnBehalf` function — already standardized in [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) with EIP-712 signature, nonce replay protection, and EIP-1271 smart wallet support — further improves onboarding by removing the need for recipients to hold public ETH. This PoC focuses on the pairwise channel because it is the novel contribution; direct ML-KEM is a trivial ECDH swap.
+
 ## Why Pairwise Channels Were Not Adopted Classically
 
 BIP-47 (2015) proposed pairwise payment codes for Bitcoin — saw limited adoption because the 33 B ECDH ephemeral key is trivial, and stealth addresses provide unlinkability without persistent state.
@@ -259,5 +263,6 @@ Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational
 ## Acknowledgements
 
 - Hy Ngo — Review and audit
+- Platus team — `registerKeysOnBehalf` and direct ML-KEM UX recommendations
 - Vikas — Sepolia ETH for testnet deployment
 - Keewoo Lee — Discussion on PQ privacy
