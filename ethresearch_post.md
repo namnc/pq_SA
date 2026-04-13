@@ -114,19 +114,23 @@ Mitigation for channel-count leakage: senders can post **dummy first contacts** 
 
 ### Forward Secrecy and Nonce Management
 
-The pairwise model introduces two limitations absent in classical stealth addresses: (1) per-receiver nonce state and (2) no per-payment forward secrecy. These are not implementation gaps — they are fundamental to amortizing PQ key exchange.
+The pairwise model introduces two limitations absent in both classical stealth addresses and direct ML-KEM: (1) per-receiver nonce state and (2) no per-payment forward secrecy. These are not implementation gaps — they are inherent to **any scheme that reuses a shared secret across payments**, which is what the pairwise optimization does.
 
-**The constraint.** No known PQ KEM produces ciphertexts under ~700 bytes. ECDH ephemeral keys are 33 bytes; ML-KEM-768 ciphertexts are 1,088 bytes. This 33× gap forces amortization into a one-time first contact. Amortization produces a long-lived shared secret (`k_pairwise`), which creates both problems: nonces are needed to differentiate payments under the same key, and the static key means compromise reveals the entire channel history (nonces are on-chain in plaintext).
+**Neither classical nor direct ML-KEM has these problems.** In classical ERC-5564, the sender generates a fresh ephemeral keypair per payment from the OS CSPRNG — no nonce, no per-receiver state, no long-lived shared secret. Direct ML-KEM (Model 1) works the same way: fresh encapsulation per payment, internal randomness, stateless. Standard wallet practice (Umbra, etc.) is: call the CSPRNG, compute the ECDH/KEM, post, forget. Birthday collision on a 256-bit random scalar or ML-KEM internal randomness requires ~2^{128} payments — not a concern.
+
+The pairwise model trades this statelessness for 64× smaller per-payment calldata. The nonce is the pairwise model's substitute for the fresh randomness that classical and direct models get for free from ephemeral key generation. The static `k_pairwise` is what eliminates per-payment forward secrecy. Both problems are the cost of amortization — not of post-quantum cryptography itself.
+
+**The constraint.** No known PQ KEM produces ciphertexts under ~700 bytes. ECDH ephemeral keys are 33 bytes; ML-KEM-768 ciphertexts are 1,088 bytes. This 33× gap makes per-payment PQ encapsulation expensive, motivating the pairwise optimization. But the optimization introduces a long-lived shared secret (`k_pairwise`), which creates both problems: nonces are needed to differentiate payments under the same key, and the static key means compromise reveals the entire channel history (nonces are on-chain in plaintext).
 
 **The trilemma.** A stealth address scheme cannot simultaneously achieve all three:
 
 1. Post-quantum per-payment security
-2. Per-payment forward secrecy
+2. Per-payment forward secrecy (and stateless nonce management)
 3. Small per-payment calldata (< ~50 B)
 
-Classical ERC-5564 achieves (2) + (3): a fresh 33-byte ephemeral key per payment, independent forward secrecy, no shared state. Pairwise PQ achieves (1) + (3): 17-byte memos after a one-time first contact. Per-payment ML-KEM achieves (1) + (2): fresh encapsulation, but 1,088 bytes each.
+Classical ERC-5564 achieves (2) + (3): a fresh 33-byte ephemeral key per payment, independent forward secrecy, no shared state. Pairwise PQ achieves (1) + (3): 17-byte memos after a one-time first contact. Direct ML-KEM achieves (1) + (2): fresh encapsulation per payment, stateless — but 1,088 bytes each.
 
-**Approaches considered and rejected:**
+**Approaches considered and rejected** (for recovering forward secrecy within the pairwise model):
 
 | Approach | What it gives | Why it fails |
 |---|---|---|
@@ -135,15 +139,13 @@ Classical ERC-5564 achieves (2) + (3): a fresh 33-byte ephemeral key per payment
 | **Per-payment ephemeral EC** `HKDF(ECDH(esk, viewing_pk_ec) \|\| k_pairwise)` | Classical forward secrecy; eliminates nonce management (epk is stateless) | 34 B/payment (2× current). No PQ forward secrecy — Shor's algorithm recovers `ss_ec` from on-chain `epk`, leaving only `k_pairwise` as protection, which is the static-key problem restated. |
 | **Periodic re-keying** (new first contact every N payments) | Epoch-bounded forward secrecy | 1,121 B per re-key; forward secrecy is epoch-granular, not per-payment. Doesn't solve nonce management within an epoch. |
 
-All four fail for the same root cause: **per-payment PQ forward secrecy requires per-payment PQ key encapsulation** (1,088 B), which is precisely what the pairwise optimization exists to avoid.
-
-The nonce management problem is similarly inherent. Any scheme that reuses a shared secret across payments needs a differentiator (nonce or counter), and that differentiator requires per-receiver state. Random nonces risk collision on state rollback; monotonic counters are recoverable from on-chain memo counts but leak payment ordering.
+All four fail for the same root cause: **per-payment PQ forward secrecy requires per-payment PQ key encapsulation** (1,088 B), which is precisely what the pairwise optimization exists to avoid. Nonce management is similarly inherent: any scheme that reuses a shared secret needs a differentiator, and that differentiator requires per-receiver state.
 
 **What the pairwise model does provide:**
 - **HNDL defense**: a quantum attacker who records today's first contact ciphertext cannot recover `k_pairwise` (ML-KEM-768 protects the first contact).
 - **Channel compartmentalization**: compromise of one `k_pairwise` reveals only that channel.
 - **Spending safety**: `k_pairwise` compromise enables payment detection but never spending (`spending_sk` is never derived from the viewing bundle).
-- **Fallback**: wallets that prioritize forward secrecy over efficiency can use direct ML-KEM (1,089 B/payment) — this is the stateless alternative described in [Direct ML-KEM as Default](#direct-ml-kem-as-default).
+- **Stateless fallback**: wallets that prioritize forward secrecy and stateless operation over calldata efficiency can use direct ML-KEM (1,089 B/payment, no nonce, no `k_pairwise`) — this is the alternative described in [Direct ML-KEM as Default](#direct-ml-kem-as-default). The choice between pairwise and direct is a per-wallet policy decision, not a protocol constraint.
 
 ### Security Properties
 
