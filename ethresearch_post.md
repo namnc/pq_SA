@@ -106,7 +106,7 @@ Wallet implementations should use a **monotonic counter** (not random) as the no
 
 ### Privacy Tradeoff vs Classical
 
-In classical stealth (33 B/payment), all payments are identical-looking announcements. In pairwise (17 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count channels and total memos per sender, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise compartmentalizes per-sender — one compromised `k_pairwise` reveals only one channel, while viewing bundle compromise reveals all.
+In classical stealth (34 B/payment), all payments are identical-looking announcements. In pairwise (17 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count channels and total memos per sender, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise compartmentalizes per-sender — one compromised `k_pairwise` reveals only one channel, while viewing bundle compromise reveals all.
 
 Mitigation for channel-count leakage: senders can post **dummy first contacts** (encrypted to random keys) to obscure the true number of active channels. Cost: one additional 1,121 B event per dummy channel.
 
@@ -192,7 +192,7 @@ Payload sizes are application data, not ABI-encoded wire calldata. Pairwise gas 
 | Model | Total gas | Total payload |
 |-------|-----------|---------------|
 | Classical (10 × announce + ETH) | ~680K (estimated) | 340 B |
-| Direct ML-KEM (10 × announce + ETH) | ~852K (estimated) | 10,890 B |
+| Direct ML-KEM (10 × announce + ETH) | ~850K (estimated) | 10,890 B |
 | **Pairwise (1 first contact + 10 memos + ETH)** | **~629K (measured)** | **1,291 B** |
 
 Classical and direct ML-KEM totals are computed from estimated per-payment gas. Pairwise total is derived from Anvil measurements: ~79K first contact + 10 × (~34K memo + 21K ETH) ≈ 629K (exact values vary slightly between runs due to calldata byte composition; see demo output). The pairwise payload advantage (~64× smaller than direct ML-KEM per payment) is the primary motivation; gas savings depend on the classical/direct announcer implementation.
@@ -253,34 +253,58 @@ This works because the map `sk ↦ sk·G` is a **group homomorphism**: addition 
 - **Scanning delegation**: view tags filter 99.6% of memos; the remaining require AES-GCM decryption (to recover the encrypted stealth address) instead of EC point addition. Functionally equivalent.
 - **HNDL defense**: ML-KEM protects the first contact ciphertext. Unchanged.
 
-**No NIST-standardized PQ signature scheme has the homomorphic property.** The obstacle is structural, not a parameter choice:
+**No NIST-standardized PQ signature scheme has the homomorphic property.** The obstacle is structural, not a parameter choice. All three NIST PQ signature finalists were analyzed:
 
 | Scheme | Key structure | Why offset fails |
 |---|---|---|
-| **Dilithium (ML-DSA)** | `t = A·s1 + s2`; security requires s1, s2 short | Short offset δ → `t' = t + A·δ` is close to `t` in the lattice (linkable). Large δ → `s1 + δ` breaks shortness assumption (signing fails or leaks key). Shared matrix `A` is a fingerprint across derived keys. |
-| **Falcon** | `h = g/f mod q`; f, g short NTRU polynomials | `h' = g/(f+δ)` is not computable from `(h, δ)` without `g`. No public-only derivation path. |
-| **SPHINCS+ (SLH-DSA)** | Hash-based Merkle trees | No algebraic structure at all. |
+| **Dilithium (ML-DSA)** | Public key `t = A·s1 + s2` where A is a public matrix and s1, s2 are short secret vectors (coefficients bounded by ±η) | Two contradictory requirements: *unlinkability* needs a large offset δ so that `A·δ` looks random (indistinguishable from a fresh key), but *signing security* needs s1 + δ to remain short (Dilithium's rejection sampling leaks key bits if coefficients exceed the bound). Additionally, the matrix A is derived from a public seed ρ — if spending\_pk and stealth\_pk share the same ρ, they share the same A, making them trivially linkable. |
+| **Falcon** | Public key `h = g/f mod q` where f, g are short NTRU polynomials | Given `(h, δ)`, computing `h' = g/(f+δ)` requires knowing g (part of the secret key). There is no public-only way to derive a related public key. |
+| **SPHINCS+ (SLH-DSA)** | Hash-based Merkle trees; no algebraic structure | No group operation exists. Keys are hash chains with no mathematical relationship between different keypairs. |
 
-The root cause is deeper than any individual scheme. Shor's algorithm solves the Hidden Subgroup Problem for **abelian groups** — precisely the structure that makes EC scalar addition possible. Lattice-based schemes resist Shor because their security relies on the geometry of short vectors (LWE/SIS), not on group-theoretic structure. **The property that makes stealth derivation work (abelian group homomorphism) is the property that quantum computers exploit.**
+The root cause is deeper than any individual scheme. Shor's algorithm solves the Hidden Subgroup Problem (HSP) for **abelian groups** in polynomial time — and EC scalar addition works precisely because elliptic curve groups are abelian (the map `sk ↦ sk·G` is a group homomorphism from the scalar field to the curve). Lattice-based schemes resist Shor specifically because their security relies on the geometry of short vectors (the Learning With Errors / Short Integer Solution problems), not on group-theoretic structure. **The property that makes stealth derivation work (abelian group homomorphism) is the property that quantum computers exploit.** This is not a coincidence — it is a fundamental tension:
 
-| | Has group homomorphism | Shor-resistant | Stealth derivation |
+| | Has commutative algebraic structure | Shor-resistant | Stealth derivation |
 |---|---|---|---|
 | EC (secp256k1) | Yes | No | Yes |
 | CSIDH (isogeny) | Yes (class group action) | Partially (subexponential quantum) | Yes |
 | Lattice (Dilithium, Falcon) | No | Yes | No |
 | Hash-based (SPHINCS+) | No | Yes | No |
 
-[CSIDH](https://ethresear.ch/t/towards-practical-post-quantum-stealth-addresses/15437) (asanso 2023) is the only PQ family with a usable group action for stealth addresses — but its quantum security is subexponential (Kuperberg's algorithm), not polynomial-time-hard, and operations are orders of magnitude slower than EC. It is not on any NIST standards track.
+[CSIDH](https://ethresear.ch/t/towards-practical-post-quantum-stealth-addresses/15437) (asanso 2023) is the only PQ primitive family with a usable group action for stealth addresses. It uses the class group of an imaginary quadratic order to act on isomorphism classes of elliptic curves — a commutative group action that provides the same algebraic structure as EC scalar addition. However, the class group is abelian, so quantum algorithms still apply: Kuperberg's algorithm solves the hidden shift problem in subexponential quantum time (~exp(√log p)), compared to Shor's polynomial time for EC. CSIDH survives by outrunning the attack with larger parameters, not by being structurally immune. Operations are orders of magnitude slower than EC (~40 ms vs ~0.1 ms per group action), and CSIDH is not on any NIST standards track.
 
-An alternative approach avoids the homomorphism entirely: PQ KeyGen is monolithic — `seed → (pk, sk)` — so whoever can derive the public key can also derive the private key. This means fully PQ stealth addresses cannot use EOAs (where `address = hash(public_key)`). Instead, they require **smart contract wallets** where spending is enforced by on-chain signature verification:
+**The smart contract wallet path.** Since no lattice-based signature scheme supports key-homomorphic derivation, fully PQ stealth addresses cannot use Ethereum's current EOA model, where `address = keccak256(public_key)[12:]` and spending requires a signature verifiable from that public key. In any PQ scheme, KeyGen is monolithic — `seed → (pk, sk)` — so whoever can derive the stealth public key (needed for the address) can also derive the stealth private key (able to spend). The sender would be able to steal the funds.
+
+The resolution is to decouple the address from the signing key using **smart contract wallets**:
 
 ```
 stealth_addr = CREATE2(factory, salt=hash(k_pairwise || nonce), wallet_code(spending_pk))
 ```
 
-The sender computes the address from public data (`spending_pk`, `salt`), but spending requires a PQ signature verified by the contract — only the holder of `spending_pk`'s corresponding secret key can sign. Detection still works: view tags are symmetric crypto (independent of the signature scheme), and the stealth address can be encrypted in the memo under `k_view` for scanning delegation. This aligns with Ethereum's account abstraction direction (ERC-4337, EIP-7702) and is likely required for PQ transaction signatures regardless (ML-DSA-44 signatures are 2,420 B at NIST Level 2; ML-DSA-65 is 3,309 B at Level 3 — too large for current EOA verification).
+[CREATE2](https://eips.ethereum.org/EIPS/eip-1014) computes a deterministic address from `(factory_address, salt, keccak256(init_code))`. The sender knows all three inputs: the factory is a public contract, the salt is derived from the shared pairwise key, and the init_code deploys a wallet parameterized by the recipient's `spending_pk` (which is public, registered on-chain). So the sender can compute `stealth_addr` without any secret. But spending requires the deployed wallet to verify a PQ signature under `spending_pk` — only the recipient (holding `spending_sk`) can produce this signature.
 
-[Mikic et al. 2025](https://arxiv.org/html/2501.13733v1) is the only published scheme that achieves PQ viewing/spending separation, using custom Module-LWE arithmetic — but it is not Ethereum-compatible and does not target existing account models.
+Detection is unchanged: view tags are pure symmetric crypto (independent of the signature scheme). The stealth address can be encrypted in the memo under a viewing key (`k_view`) for scanning delegation, preserving the viewing/spending separation at the encryption layer rather than the key-homomorphism layer.
+
+This approach aligns with Ethereum's account abstraction direction (ERC-4337, EIP-7702) and is likely required for PQ transaction signatures regardless — ML-DSA-44 signatures are 2,420 B at NIST Level 2, ML-DSA-65 is 3,309 B at Level 3, too large for current EOA verification in the EVM.
+
+[Mikic et al. 2025](https://arxiv.org/html/2501.13733v1) is the only published scheme that achieves PQ stealth addresses with viewing/spending separation. Their technique is instructive for understanding what lattice-based stealth derivation actually requires:
+
+**Their construction.** The recipient generates two independent Kyber (ML-KEM) keypairs: a spending pair `(k, K)` and a viewing pair `(v, V)`. The sender encapsulates to the viewing key `V` to get a shared secret `S`, then derives the stealth private key as `p = k + XOF(S)` — addition of polynomials in the ring `R_q = Z_q[x]/(x^256 + 1)` (the algebraic structure underlying Kyber/ML-KEM). This is the direct lattice analogue of EC scalar addition `stealth_sk = spending_sk + hash(ss)`. Here `XOF` is an extendable output function (e.g., SHAKE) that expands the shared secret into a polynomial in `R_q`.
+
+The stealth public key is reconstructed as `P = A_K · XOF(S) + t_K`, where `A_K` is the public matrix (derived from the seed `ρ_K` in `K`) and `t_K` is the public vector from `K`. Both are part of the recipient's public spending key. A viewing key holder who knows `S` and `K` can compute `P` without knowing `k` — viewing/spending separation holds.
+
+**Why it works for KEM but not for signing.** The offset `XOF(S)` is a pseudorandom polynomial with full-range coefficients (not short — coefficients span all of `Z_q`, not just a small interval). This is necessary for unlinkability: the public key component `A_K · XOF(S)` must be statistically close to uniform (by the leftover hash lemma), which requires `XOF(S)` to have high entropy across `R_q`. If the offset were short (small coefficients, as lattice signature schemes require), `A_K · XOF(S)` would be a short lattice vector — distinguishable from a random element and linkable to the original spending key.
+
+The resulting stealth secret key `p = k + XOF(S)` therefore has large coefficients. The stealth keypair `(p, P)` is not used for further KEM operations — it exists only to establish the stealth address. (Using `p` directly for Kyber decapsulation would fail: the large coefficients of `p` would overwhelm the noise tolerance, producing decryption failures.) The non-short key is acceptable for address derivation but breaks the security assumptions of lattice-based signature schemes: Dilithium's rejection sampling requires short secret keys to avoid leaking key bits through signatures, and Falcon's NTRU trapdoor sampling assumes short keys for its Gaussian sampler.
+
+**The construction produces a stealth keypair you can decrypt with but cannot sign with** — the gap between detection and spending that EC closes with a single group operation.
+
+**The signing gap and its resolution.** There is no lattice-internal fix: making the offset short enough for signing breaks unlinkability, and making it large enough for unlinkability breaks signing. The paper does not specify a signing scheme.
+
+The practical resolution is the same as our analysis above: smart contract wallets (CREATE2), where the stealth address is a contract that verifies PQ signatures against the recipient's original `spending_pk`, decoupling address derivation from key structure entirely. Mikic et al.'s Kyber-based detection (viewing/spending separation, view tags) composes naturally with contract-wallet spending: the KEM layer identifies payments, the contract layer authorizes spending.
+
+**Costs and status.** Stealth meta-addresses are ~1,600 B (two Kyber-512 public keys, vs ~66 B for two EC keys — a ~24× blowup). Ephemeral ciphertexts are ~768 B per payment (comparable to our direct ML-KEM model at 1,089 B). Scanning is fast: ~8 ms for 80,000 announcements on Apple M2, actually faster than EC-based schemes due to Kyber's efficient NTT-based (Number Theoretic Transform) decapsulation. The paper provides no Ethereum address derivation, no smart contract implementation, no on-chain cost analysis, no OMR composition, and no formal security proofs for the stealth construction itself (security is argued informally via reduction to Module-LWE hardness).
+
+**Relationship to this work.** Mikic et al. demonstrate that polynomial addition in `R_q` can replace EC scalar addition for stealth key derivation — but only for the KEM/detection layer, not for transaction signing. This confirms and refines the structural result from our analysis: the fundamental obstacle to fully PQ stealth addresses is not the key exchange (solved by ML-KEM), not the detection mechanism (solved by view tags), and not even the stealth key derivation (solved by polynomial addition) — it is specifically the **signing layer**: producing a derived keypair that is both unlinkable and usable for on-chain transaction authentication. Smart contract wallets (CREATE2 + on-chain PQ signature verification) remain the most practical path to close this gap.
 
 **This work is explicitly transitional**: we upgrade the key exchange layer to PQ (ML-KEM-768) while retaining EC scalar addition for stealth derivation. The key exchange is the urgent layer — it protects against HNDL today. The stealth derivation layer is a different threat model: it requires an active quantum computer at spend time, not passive recording. The migration path to fully PQ stealth addresses is an open research problem that depends on account abstraction and PQ signature integration at the protocol level.
 
