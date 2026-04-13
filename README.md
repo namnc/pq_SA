@@ -24,19 +24,19 @@ Recipient: stealth_sk = spending_sk + hash(ss)                 ← can spend
 Replace ECDH with ML-KEM. Everything else stays the same.
 
 ```
-Sender: (ct, ss) = ML-KEM.Encaps(viewing_ek)                  ← 1,088 B ciphertext
+Sender: (ct, ss) = ML-KEM.Encaps(ek_kem)                      ← 1,088 B ciphertext
         stealth_pk = spending_pk + hash(ss) * G                ← same EC algebra
         posts ct + view_tag (1 B) on-chain
         sends ETH to address(stealth_pk)
 
-Server: ss = ML-KEM.Decaps(viewing_dk, ct)                    ← can detect
+Server: ss = ML-KEM.Decaps(dk_kem, ct)                         ← can detect
         view_tag check: hash(ss)[0] == tag? (99.6% filter)
         stealth_pk = spending_pk + hash(ss) * G                ← cannot spend
 
 Recipient: stealth_sk = spending_sk + hash(ss)                 ← can spend (Ethereum sig)
 ```
 
-**Viewing/spending separation preserved**: the server has `viewing_dk` and can compute `hash(ss)`, but `stealth_sk = spending_sk + hash(ss)` requires `spending_sk` (private). Delegation is safe.
+**Viewing/spending separation preserved**: the server has `dk_kem` and can compute `hash(ss)`, but `stealth_sk = spending_sk + hash(ss)` requires `spending_sk` (private). Delegation is safe. Note: `hash(ss)` in the pseudocode above abbreviates domain-separated SHA-256. The actual view tag is `SHA-256("pq-sa-view-tag-v1" || ss)[0]`; stealth offset is `SHA-256("pq-sa-stealth-derive-v1" || ss)`.
 
 **Scanning is fast**: ML-KEM-768 decapsulation is ~36μs. Scanning 10K memos takes ~0.8s (direct) or ~0.4s (pairwise). View tags further reduce work by 99.6%.
 
@@ -51,7 +51,7 @@ First contact (one-time):
 Per payment:
   ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
   stealth_pk = spending_pk + SHA-256("pq-sa-stealth-derive-v1" || ss) * G
-  posts memo(nonce) on-chain                                ← 18 B
+  posts memo(nonce, viewTag) on-chain                        ← 17 B
   sends ETH to address(stealth_pk)
 ```
 
@@ -61,11 +61,11 @@ Per payment:
 
 Classical ERC-5564 is vulnerable to HNDL: an adversary records ECDH ephemeral keys on-chain today and breaks them later with a quantum computer, linking all stealth addresses to recipients.
 
-The hybrid KEM in the pairwise first contact defeats this. A quantum attacker can break the ECDH component but not ML-KEM-768. Since `k_pairwise = HKDF(ECDH_ss || ML-KEM_ss)`, both are required — all derived stealth addresses remain hidden.
+The hybrid KEM in the pairwise first contact defeats this. A quantum attacker can break the ECDH component but not ML-KEM-768. Since `k_pairwise = HKDF(ss_ec || ss_kem || epk, "pq-sa-v1")`, both shared secrets are required — all derived stealth addresses remain hidden.
 
 ### Wallet Recovery
 
-The recipient stores only a 32-byte seed. Keys are deterministic: `seed → (spending_sk, viewing_sk_ec, viewing_dk)`. First contact ciphertexts are permanently on-chain. Recovery:
+The recipient stores only a 32-byte seed. Keys are deterministic: `seed → (spending_sk, viewing_sk_ec, dk_kem)`. First contact ciphertexts are permanently on-chain. Recovery:
 
 1. Re-derive keys from seed
 2. Scan `FirstContact` events, decapsulate each → get candidate `k_pairwise` values
@@ -99,10 +99,12 @@ The viewing bundle contains **both** the EC viewing secret (for ECDH) and the ML
 | View tag (99.6% filter) | Yes | **Yes** | **Yes** |
 | Safe server delegation | Yes | **Yes** | **Yes** |
 | Spend auth | Ethereum sig | Ethereum sig | Ethereum sig |
-| Calldata per payment | 34 B | 1,089 B | **18 B** (after first contact) |
-| Announcement gas | ~47K | ~61K | **~34K** (after ~79K first contact) |
+| Calldata per payment | 34 B | 1,089 B | **17 B** (after first contact) |
+| Announcement gas | ~47K (estimated) | ~64K (estimated) | **~34K (measured)** (after ~79K first contact) |
 | ETH transfer gas | 21K | 21K | 21K |
 | Scanning 10K memos (measured) | ~0.7s | ~0.8s | ~0.4s |
+
+Pairwise gas is measured on Anvil; classical and direct ML-KEM are estimated from the ERC-5564 announcer gas model (no announcer contract in this PoC).
 
 **PQ scope**: Stealth spending uses secp256k1. Full PQ spending needs EIP-7932. Our scope is PQ KEM for key exchange and payment discovery.
 
@@ -122,7 +124,7 @@ ETH transfer is constant (21K gas) across all models. The announcement gas is wh
 | Model | Announcement gas | Payload |
 |-------|-----------------|---------|
 | Classical ERC-5564 | ~47K (estimated) | 34 B |
-| Direct ML-KEM | ~61K (estimated) | 1,089 B |
+| Direct ML-KEM | ~64K (estimated) | 1,089 B |
 | Pairwise (per payment) | **34,206 (measured)** | **17 B** |
 
 ## Project Structure
@@ -151,7 +153,7 @@ pq_SA/
 cd contracts && forge install foundry-rs/forge-std --no-commit && forge build && cd ..
 cargo build --release
 
-# Test (18 Rust + 14 Foundry = 32 total)
+# Test (19 Rust + 14 Foundry = 33 total)
 cargo test --release
 cd contracts && forge test -vv
 
@@ -206,14 +208,14 @@ cargo run -p demo --release
 - **Gas as anti-spam**: MemoRegistry is a pure event log with no access control beyond gas cost. This matches ERC-5564's `ERC5564Announcer` design — anyone can post announcements. Scanning cost scales linearly with total announcements, bounded by chain gas limits.
 - **No channel identifiers on memos**: Memos do not identify which pairwise channel they belong to. Adding a channel ID would improve scanning efficiency (skip non-matching channels) but would leak sender-recipient linkage on-chain. The current design uses view tags (1 byte, 99.6% filter rate) to reduce scanning cost without metadata leakage. For S senders × N memos, the recipient performs S × N view tag checks — each a single SHA-256 + byte comparison.
 - **Sender visibility**: The sender's `msg.sender` is visible on every transaction — same as classical ERC-5564. Sender anonymity requires a relayer or account abstraction (ERC-4337).
-- **Pairwise vs classical privacy**: In classical stealth (33 B/payment), all payments are identical-looking announcements. In pairwise (18 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count how many channels a sender has and how many total memos, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. Stealth addresses are unique per payment in both models. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise does compartmentalize per-sender — one compromised `k_pairwise` reveals only one channel, while `viewing_dk` compromise reveals all.
-- **Direct ML-KEM alternative**: for wallets prioritizing simplicity, direct ML-KEM (Model 1) is stateless — fresh encapsulation per payment, 1,089 B, ~82K gas, no k_pairwise. 49% more gas than pairwise but zero complexity. A future `registerKeysOnBehalf` (as defined in [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) — EIP-712 signature + nonce + EIP-1271 support) improves onboarding. This PoC focuses on pairwise because it is the novel contribution.
+- **Pairwise vs classical privacy**: In classical stealth (33 B/payment), all payments are identical-looking announcements. In pairwise (17 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count how many channels a sender has and how many total memos, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. Stealth addresses are unique per payment in both models. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise does compartmentalize per-sender — one compromised `k_pairwise` reveals only one channel, while viewing bundle compromise reveals all.
+- **Direct ML-KEM alternative**: for wallets prioritizing simplicity, direct ML-KEM (Model 1) is stateless — fresh encapsulation per payment, 1,089 B, ~85K gas, no k_pairwise. ~55% more gas than pairwise but zero complexity. A future `registerKeysOnBehalf` (as defined in [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) — EIP-712 signature + nonce + EIP-1271 support) improves onboarding. This PoC focuses on pairwise because it is the novel contribution.
 - **Nonce reuse risk**: the pairwise derivation is deterministic in (k_pairwise, nonce). If a wallet reuses a nonce (state rollback, bad RNG), two payments land at the same stealth address — linking them on-chain. Wallet implementations should use a **monotonic counter** as the nonce, with on-chain recovery (count `Memo` events per channel). Tradeoff: counter leaks ordering; random nonces don't.
 - **Demo is single-user**: The demo uses `.last()` for event queries, which is only correct for a single-user Anvil run. A production client must filter `KeyRegistered` by recipient address and try all `FirstContact` events via ML-KEM implicit rejection.
 
 ## What This PoC Does NOT Cover
 
-- **PQ spending signatures**: Stealth addresses use secp256k1 ECDSA. Full PQ spending requires PQ signatures at the protocol level (EIP-7932). Our scope is PQ key exchange.
+- **PQ spending signatures**: Stealth addresses use secp256k1 ECDSA. Full PQ spending requires PQ signatures at the protocol level (EIP-7932). Our scope is PQ key exchange. Note: PQ signatures (Dilithium, Falcon) do not support the EC scalar addition needed for stealth derivation — fully PQ stealth addresses likely require smart contract wallets (ERC-4337). See the [ethresearch post](ethresearch_post.md) for detailed analysis.
 - **Token transfers**: Only demonstrates native ETH. ERC-20 transfers to stealth addresses work identically — the stealth address is a standard Ethereum address.
 - **Sender privacy**: The sender's address is visible as `msg.sender` on MemoRegistry calls — same as classical ERC-5564. Stealth addresses protect recipient privacy, not sender privacy. Sender anonymity requires a relayer or account abstraction (ERC-4337).
 - **On-chain key validation**: The contract validates key lengths but not cryptographic validity (e.g., valid secp256k1 point). Off-chain clients must re-validate keys from `KeyRegistered` events before use.

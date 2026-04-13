@@ -37,7 +37,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 - **Spending key**: secp256k1 private key. Used to derive stealth private keys and sign transactions. MUST remain private.
 - **Stealth public key**: `spending_pk + hash(shared_secret) * G`. Computable by anyone with the shared secret and spending public key.
 - **Stealth private key**: `spending_sk + hash(shared_secret)`. Computable only by the spending key holder.
-- **View tag**: `hash(shared_secret)[0]`. A 1-byte tag that filters 99.6% of non-matching announcements.
+- **View tag**: `SHA-256("pq-sa-view-tag-v1" || shared_secret)[0]`. A 1-byte tag that filters 99.6% of non-matching announcements.
 - **Pairwise key**: A shared symmetric key established via hybrid KEM (ECDH + ML-KEM) during first contact.
 
 ### Interface
@@ -99,7 +99,7 @@ interface IERC_XXXX_MemoRegistry {
 For all schemes, the stealth address MUST be derived using EC scalar addition:
 
 ```
-shared_secret = KEM.Decapsulate(viewing_dk, ciphertext)   // or SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
+shared_secret = KEM.Decapsulate(dk_kem, ciphertext)       // or SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
 scalar = SHA-256("pq-sa-stealth-derive-v1" || shared_secret)
 stealth_pk = spending_pk + scalar * G
 stealth_sk = spending_sk + scalar                         // recipient only
@@ -140,8 +140,6 @@ Stealth addresses use secp256k1 for transaction signing. Full PQ spending requir
 
 ## Backwards Compatibility
 
-This ERC is designed to coexist with ERC-5564 and ERC-6538:
-
 This ERC is designed to coexist with ERC-5564 and ERC-6538. A wallet MAY register both classical and PQ meta-addresses simultaneously. The `MemoRegistry` contract is a separate deployment from the existing `ERC5564Announcer`.
 
 ## Reference Implementation
@@ -151,14 +149,14 @@ A reference implementation is available at [pq_SA](https://github.com/namnc/pq_S
 - `primitives/src/stealth.rs` — EC algebra stealth derivation (Model 1 + 2)
 - `primitives/src/hybrid_kem.rs` — ECDH + ML-KEM-768 hybrid KEM with separate viewing/spending keys
 - `contracts/src/MemoRegistry.sol` — Pairwise channel memo log
-- 32 tests (18 Rust + 14 Foundry), including delegation safety verification
+- 33 tests (19 Rust + 14 Foundry), including delegation safety verification
 - End-to-end Anvil demo: first contact → memo → ETH to stealth address → recipient detects and can spend
 
 ## Security Considerations
 
 ### Viewing/spending separation
 
-The viewing key (`viewing_dk`, ML-KEM decapsulation key) allows computing shared secrets and detecting payments. It does NOT allow spending. The spending key (`spending_sk`, secp256k1) is required to derive `stealth_sk = spending_sk + hash(ss)`. This separation is identical to ERC-5564's classical model.
+The viewing key (`dk_kem`, ML-KEM decapsulation key) allows computing shared secrets and detecting payments. It does NOT allow spending. The spending key (`spending_sk`, secp256k1) is required to derive `stealth_sk = spending_sk + hash(ss)`. This separation is identical to ERC-5564's classical model.
 
 ### Quantum security scope
 
@@ -166,17 +164,17 @@ ML-KEM-768 provides NIST Level 3 post-quantum security for the key exchange. Ste
 
 ### Key sizes
 
-ML-KEM-768 encapsulation keys are 1,184 bytes — stored on-chain in the `KeysRegistered` event. This is public information. The decapsulation key (2,400 bytes) is the viewing key and MUST be kept confidential (or shared only with trusted scanning servers).
+ML-KEM-768 encapsulation keys are 1,184 bytes — stored on-chain in the `KeyRegistered` event. This is public information. The decapsulation key (2,400 bytes) is the viewing key and MUST be kept confidential (or shared only with trusted scanning servers).
 
 ### Harvest-now-decrypt-later (HNDL)
 
-Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recording these today can break them with a future quantum computer, linking stealth addresses to recipients and deriving spending keys. The hybrid KEM replaces ECDH with ECDH + ML-KEM-768, making harvested ciphertexts useless to a quantum attacker. `k_pairwise = HKDF(ECDH_ss || ML-KEM_ss)` — the attacker must break both, and ML-KEM-768 is quantum-resistant.
+Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recording these today can break them with a future quantum computer, linking stealth addresses to recipients and deriving spending keys. The hybrid KEM replaces ECDH with ECDH + ML-KEM-768, making harvested ciphertexts useless to a quantum attacker. `k_pairwise = HKDF(ss_ec || ss_kem || epk, "pq-sa-v1")` — the attacker must break both shared secrets, and ML-KEM-768 is quantum-resistant.
 
 ### Wallet recovery
 
 Recipients SHOULD derive all keys deterministically from a single seed. First contact ciphertexts are stored permanently on-chain in events. A recipient who loses their device can re-derive keys from the seed, scan `FirstContact` or `Announcement` events, and decapsulate each ciphertext to obtain candidate pairwise keys. Due to ML-KEM implicit rejection, decapsulation always returns a key — even for first contacts not addressed to this recipient. Genuine channels MUST be verified by checking view tags against subsequent `Memo` events. Only matching channels will produce consistent view tags.
 
-The viewing/spending separation enables hardware wallet integration: `spending_sk` stays on the hardware device while `viewing_dk` is exported to software wallets for scanning. To spend from a stealth address, the software wallet sends `scalar = hash(shared_secret)` to the hardware wallet, which computes `stealth_sk = spending_sk + scalar` and signs. The hardware wallet SHOULD verify that `spending_pk + scalar * G` matches the expected stealth address before signing.
+The viewing/spending separation enables hardware wallet integration: `spending_sk` stays on the hardware device while `dk_kem` is exported to software wallets for scanning. To spend from a stealth address, the software wallet sends `scalar = hash(shared_secret)` to the hardware wallet, which computes `stealth_sk = spending_sk + scalar` and signs. The hardware wallet SHOULD verify that `spending_pk + scalar * G` matches the expected stealth address before signing.
 
 ### View tag privacy
 
