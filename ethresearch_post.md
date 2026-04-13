@@ -2,7 +2,7 @@
 
 We show how to add ML-KEM-768 ([FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf)) to Ethereum stealth addresses (ERC-5564) via a **hybrid KEM** (ECDH + ML-KEM-768), preserving **viewing/spending key separation** via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the shared secret is secure. A scanning server with the viewing bundle can detect payments but cannot spend. We also show a pairwise channel optimization that amortizes the 1,121 B hybrid ciphertext (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext) to a one-time cost.
 
-**Code**: [github.com/namnc/pq_SA](https://github.com/namnc/pq_SA) (Rust + Solidity, 33 tests, Anvil demo)
+**Code**: [github.com/namnc/pq_SA](https://github.com/namnc/pq_SA) (Rust + Solidity, 36 tests, Anvil demo)
 **Quick start**: `cd contracts && forge install foundry-rs/forge-std --no-commit && forge build && cd .. && cargo test --release`
 
 ## Motivation
@@ -310,7 +310,7 @@ The practical resolution is the same as our analysis above: smart contract walle
 
 ## Implementation
 
-33 tests (19 Rust + 14 Solidity). The PoC demonstrates:
+36 tests (22 Rust + 14 Solidity). The PoC demonstrates:
 - Hybrid KEM first contact → pairwise key establishment
 - Stealth address derivation with viewing/spending separation
 - Memo posting on MemoRegistry contract

@@ -3,7 +3,7 @@
 //! 1. **Direct ML-KEM stealth** (ERC-5564 replacement):
 //!    Fresh ML-KEM encapsulation per note. 1,088 B ciphertext per note.
 //!    Viewing/spending separation via EC scalar addition.
-//!    Safe delegation: server with viewing_dk can detect but not spend.
+//!    Safe delegation: server with dk_kem can detect but not spend.
 //!
 //! 2. **Pairwise channel stealth** (our optimization):
 //!    One-time ML-KEM first contact → k_pairwise. Then derive stealth
@@ -14,6 +14,7 @@
 //! Our scope is PQ KEM optimization.
 
 use sha2::{Sha256, Digest};
+use zeroize::Zeroize;
 
 // =========================================================================
 //  Model 1: Direct ML-KEM stealth (ERC-5564 with ML-KEM)
@@ -103,7 +104,8 @@ pub fn compute_view_tag(shared_secret: &[u8; 32]) -> u8 {
 /// Derive stealth address from pairwise key + nonce (no per-note KEM).
 ///
 /// Uses the same EC algebra as Model 1, but the shared_secret comes from
-/// HKDF(k_pairwise, nonce) instead of ML-KEM encapsulation.
+/// SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce) instead of
+/// ML-KEM encapsulation.
 pub fn derive_pairwise_stealth(
     spending_pk: &secp256k1::PublicKey,
     spending_sk: Option<&secp256k1::SecretKey>,
@@ -115,17 +117,19 @@ pub fn derive_pairwise_stealth(
     hasher.update(b"pq-sa-pairwise-stealth-v1");
     hasher.update(k_pairwise);
     hasher.update(nonce);
-    let ss: [u8; 32] = hasher.finalize().into();
+    let mut ss: [u8; 32] = hasher.finalize().into();
 
     let (stealth_pk, addr) = derive_stealth_pubkey(spending_pk, &ss);
-
     let stealth_sk = spending_sk.map(|sk| derive_stealth_privkey(sk, &ss));
+    let view_tag = compute_view_tag(&ss);
+
+    ss.zeroize(); // wipe shared secret from stack
 
     StealthResult {
         stealth_pk,
         stealth_sk,
         address: addr,
-        view_tag: compute_view_tag(&ss),
+        view_tag,
     }
 }
 
@@ -134,6 +138,54 @@ pub struct StealthResult {
     pub stealth_sk: Option<secp256k1::SecretKey>,
     pub address: [u8; 20],
     pub view_tag: u8,
+}
+
+// =========================================================================
+//  Nonce management
+// =========================================================================
+
+/// Monotonic counter for pairwise channel nonce management.
+///
+/// Each sender-receiver channel MUST use unique nonces. This counter
+/// prevents nonce reuse from state rollback, bad RNG, or multi-device races.
+/// On recovery, initialize from the on-chain memo count for the channel.
+///
+/// Privacy note: a monotonic counter leaks payment ordering (an observer
+/// can determine which memo is newer). For applications where ordering
+/// leakage is unacceptable, use random 128-bit nonces instead — but accept
+/// the state-rollback risk documented in the ethresearch post.
+pub struct NonceCounter {
+    next: u128,
+}
+
+impl NonceCounter {
+    /// Create a new counter starting at 0.
+    pub fn new() -> Self {
+        Self { next: 0 }
+    }
+
+    /// Resume from a known count (e.g., recovered from on-chain memo events).
+    pub fn resume_from(count: u128) -> Self {
+        Self { next: count }
+    }
+
+    /// Get the next nonce and advance the counter.
+    pub fn next_nonce(&mut self) -> [u8; 16] {
+        let nonce = self.next.to_be_bytes();
+        self.next = self.next.checked_add(1).expect("nonce counter overflow");
+        nonce
+    }
+
+    /// Current counter value (for persistence / recovery).
+    pub fn current(&self) -> u128 {
+        self.next
+    }
+}
+
+impl Default for NonceCounter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // =========================================================================
@@ -193,7 +245,7 @@ mod tests {
         let (spending_sk, spending_pk) = generate_keypair(&mut rng);
         let shared_secret = [99u8; 32];
 
-        // Server (with viewing_dk) knows shared_secret and spending_pk
+        // Server (with dk_kem) knows shared_secret and spending_pk
         // Server can compute stealth_pk for detection
         let (stealth_pk, _) = derive_stealth_pubkey(&spending_pk, &shared_secret);
 
@@ -298,6 +350,44 @@ mod tests {
             let mut n = [0u8; 16];
             n[..8].copy_from_slice(&i.to_le_bytes());
             let r = derive_pairwise_stealth(&spending_pk, None, &k, &n);
+            addrs.insert(r.address);
+        }
+        assert_eq!(addrs.len(), 100);
+    }
+
+    // --- Nonce counter ---
+
+    #[test]
+    fn test_nonce_counter_sequential() {
+        let mut counter = NonceCounter::new();
+        let n0 = counter.next_nonce();
+        let n1 = counter.next_nonce();
+        let n2 = counter.next_nonce();
+        assert_eq!(n0, 0u128.to_be_bytes());
+        assert_eq!(n1, 1u128.to_be_bytes());
+        assert_eq!(n2, 2u128.to_be_bytes());
+        assert_eq!(counter.current(), 3);
+    }
+
+    #[test]
+    fn test_nonce_counter_resume() {
+        let mut counter = NonceCounter::resume_from(42);
+        let n = counter.next_nonce();
+        assert_eq!(n, 42u128.to_be_bytes());
+        assert_eq!(counter.current(), 43);
+    }
+
+    #[test]
+    fn test_nonce_counter_produces_unique_addresses() {
+        let mut rng = ChaChaRng::seed_from_u64(42);
+        let (_, spending_pk) = generate_keypair(&mut rng);
+        let k = [42u8; 32];
+        let mut counter = NonceCounter::new();
+        let mut addrs = std::collections::HashSet::new();
+
+        for _ in 0..100 {
+            let nonce = counter.next_nonce();
+            let r = derive_pairwise_stealth(&spending_pk, None, &k, &nonce);
             addrs.insert(r.address);
         }
         assert_eq!(addrs.len(), 100);

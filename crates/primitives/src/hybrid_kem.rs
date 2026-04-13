@@ -3,6 +3,7 @@ use sha2::Sha256;
 use ml_kem::ml_kem_768::{self, MlKem768};
 use ml_kem::{B32, Seed, DecapsulationKey, EncapsulationKey, Decapsulate, KeyExport};
 use rand::RngCore;
+use zeroize::Zeroize;
 
 pub const DOMAIN: &[u8] = b"pq-sa-v1";
 pub const PAIRWISE_KEY_LEN: usize = 32;
@@ -84,7 +85,9 @@ impl RecipientKeyPair {
     pub fn generate(rng: &mut rand_chacha::ChaChaRng) -> Self {
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
-        Self::from_seed(&seed)
+        let keys = Self::from_seed(&seed);
+        seed.zeroize(); // wipe seed from stack
+        keys
     }
 
     /// Deterministic key derivation from a 32-byte seed using labeled HKDF.
@@ -138,10 +141,16 @@ fn hybrid_kdf(ss_ec: &[u8], ss_pq: &[u8], epk: &[u8]) -> [u8; PAIRWISE_KEY_LEN] 
     let hk = Hkdf::<Sha256>::new(None, &ikm);
     let mut k = [0u8; PAIRWISE_KEY_LEN];
     hk.expand(DOMAIN, &mut k).expect("HKDF expand failed");
+    ikm.zeroize(); // wipe intermediate key material
     k
 }
 
 /// Sender encapsulates to recipient's VIEWING keys (not spending key).
+///
+/// Returns the first-contact ciphertext and the derived pairwise key.
+/// Production wallets SHOULD wrap the returned `k_pairwise` in a
+/// zeroizing container and wipe it when the channel is no longer active.
+/// Intermediate secret material (IKM, KEM randomness) is zeroized internally.
 pub fn encapsulate(
     viewing_pk_ec: &secp256k1::PublicKey,
     recipient_ek_kem: &EncapsulationKey<MlKem768>,
@@ -162,6 +171,7 @@ pub fn encapsulate(
     let (ct_pq, ss_pq) = recipient_ek_kem.encapsulate_deterministic(
         &B32::try_from(m_bytes.as_slice()).expect("32-byte m"),
     );
+    m_bytes.zeroize(); // wipe KEM randomness
 
     let ss_pq_ref: &[u8] = ss_pq.as_ref();
     let epk_bytes = epk.serialize();

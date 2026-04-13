@@ -2,7 +2,7 @@
 
 **Post-Quantum Key Exchange for Ethereum Stealth Addresses**
 
-**Experimental research PoC.** Hybrid KEM (ECDH + ML-KEM-768) for Ethereum stealth addresses, preserving viewing/spending separation via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the pairwise key is secure. Two models: direct ML-KEM (baseline) and pairwise hybrid channel (calldata optimization). Depends on pre-release `ml-kem = 0.3.0-rc.1` (unaudited).
+**Experimental research PoC.** Hybrid KEM (ECDH + ML-KEM-768) for Ethereum stealth addresses, preserving viewing/spending separation via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the pairwise key is secure. Two models are described: direct ML-KEM (baseline, primitives only) and pairwise hybrid channel (calldata optimization, end-to-end with contract + demo). Depends on pre-release `ml-kem = 0.3.0-rc.1` (unaudited).
 
 ## The Design
 
@@ -153,7 +153,7 @@ pq_SA/
 cd contracts && forge install foundry-rs/forge-std --no-commit && forge build && cd ..
 cargo build --release
 
-# Test (19 Rust + 14 Foundry = 33 total)
+# Test (22 Rust + 14 Foundry = 36 total)
 cargo test --release
 cd contracts && forge test -vv
 

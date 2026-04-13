@@ -149,7 +149,7 @@ A reference implementation is available at [pq_SA](https://github.com/namnc/pq_S
 - `primitives/src/stealth.rs` — EC algebra stealth derivation (Model 1 + 2)
 - `primitives/src/hybrid_kem.rs` — ECDH + ML-KEM-768 hybrid KEM with separate viewing/spending keys
 - `contracts/src/MemoRegistry.sol` — Pairwise channel memo log
-- 33 tests (19 Rust + 14 Foundry), including delegation safety verification
+- 36 tests (22 Rust + 14 Foundry), including delegation safety, nonce counter, and secret zeroization
 - End-to-end Anvil demo: first contact → memo → ETH to stealth address → recipient detects and can spend
 
 ## Security Considerations
@@ -168,7 +168,7 @@ ML-KEM-768 encapsulation keys are 1,184 bytes — stored on-chain in the `KeyReg
 
 ### Harvest-now-decrypt-later (HNDL)
 
-Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recording these today can break them with a future quantum computer, linking stealth addresses to recipients and deriving spending keys. The hybrid KEM replaces ECDH with ECDH + ML-KEM-768, making harvested ciphertexts useless to a quantum attacker. `k_pairwise = HKDF(ss_ec || ss_kem || epk, "pq-sa-v1")` — the attacker must break both shared secrets, and ML-KEM-768 is quantum-resistant.
+Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recording these today can break them with a future quantum computer, linking stealth addresses to recipients. The hybrid KEM replaces ECDH with ECDH + ML-KEM-768, making harvested ciphertexts useless to a quantum attacker. `k_pairwise = HKDF(ss_ec || ss_kem || epk, "pq-sa-v1")` — the attacker must break both shared secrets, and ML-KEM-768 is quantum-resistant.
 
 ### Wallet recovery
 
