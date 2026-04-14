@@ -36,7 +36,7 @@ Server: ss = ML-KEM.Decaps(dk_kem, ct)                         ← can detect
 Recipient: stealth_sk = spending_sk + hash(ss)                 ← can spend (Ethereum sig)
 ```
 
-**Viewing/spending separation preserved**: the server has `dk_kem` and can compute `hash(ss)`, but `stealth_sk = spending_sk + hash(ss)` requires `spending_sk` (private). Delegation is safe. Note: `hash(ss)` in the pseudocode above abbreviates domain-separated SHA-256. The actual view tag is `SHA-256("pq-sa-view-tag-v1" || ss)[0]`; stealth offset is `SHA-256("pq-sa-stealth-derive-v1" || ss)`.
+**Viewing/spending separation preserved**: the server has `dk_kem` and can compute `hash(ss)`, but `stealth_sk = spending_sk + hash(ss)` requires `spending_sk` (private). Delegation is safe. Note: `hash(ss)` in the pseudocode above abbreviates domain-separated SHA-256. The actual view tag is `SHA-256("pq-sa-view-tag-v1" || ss)[0]`; stealth offset is `SHA-256("pq-sa-stealth-derive-v1" || ss)`; confirm tag is `SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]`.
 
 **Scanning is fast**: ML-KEM-768 decapsulation is ~36μs. Scanning 10K memos takes ~0.8s (direct) or ~0.4s (pairwise). View tags further reduce work by 99.6%.
 
@@ -51,7 +51,8 @@ First contact (one-time):
 Per payment:
   ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
   stealth_pk = spending_pk + SHA-256("pq-sa-stealth-derive-v1" || ss) * G
-  posts memo(nonce, viewTag) on-chain                        ← 17 B
+  confirm_tag = SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]
+  posts memo(nonce, viewTag, confirmTag) on-chain            ← 21 B
   sends ETH to address(stealth_pk)
 ```
 
@@ -69,10 +70,10 @@ The recipient stores only a 32-byte seed. Keys are deterministic: `seed → (spe
 
 1. Re-derive keys from seed
 2. Scan `FirstContact` events, decapsulate each → get candidate `k_pairwise` values
-3. **Verify**: for each candidate, scan `Memo` events and check view tags. ML-KEM implicit rejection means decapsulation always returns a key — even for first contacts not addressed to you. Only genuine channels will have matching view tags among actual memos.
+3. **Verify**: for each candidate, scan `Memo` events with a two-stage filter: view tag (1 byte, 99.6% rejection) then confirm tag (`SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]`, 1/2^32 false positive rate). ML-KEM implicit rejection means decapsulation always returns a key — even for first contacts not addressed to you. The confirm tag authenticates genuine channels, resisting memo-poisoning (attacker can cover all 256 view tag values but not 2^32 confirm tag values).
 4. Confirmed channels' stealth addresses → check balances, sweep
 
-Work scales with total first contacts × memos, not just your own channels. View tags (99.6% filter) keep per-memo verification fast. Tested in `test_wallet_recovery_from_seed`.
+Work scales with total first contacts × memos, not just your own channels. View tags (99.6% prefilter) and confirm tags (1/2^32 authentication) keep per-memo verification fast. Tested in `test_wallet_recovery_from_seed`.
 
 ### Hardware Wallet Integration
 
@@ -99,7 +100,7 @@ The viewing bundle contains **both** the EC viewing secret (for ECDH) and the ML
 | View tag (99.6% filter) | Yes | **Yes** | **Yes** |
 | Safe server delegation | Yes | **Yes** | **Yes** |
 | Spend auth | Ethereum sig | Ethereum sig | Ethereum sig |
-| Calldata per payment | 34 B | 1,089 B | **17 B** (after first contact) |
+| Calldata per payment | 34 B | 1,089 B | **21 B** (after first contact) |
 | Announcement gas | ~47K (estimated) | ~64K (estimated) | **~34K (measured)** (after ~79K first contact) |
 | ETH transfer gas | 21K | 21K | 21K |
 | Scanning 10K memos (measured) | ~0.7s | ~0.8s | ~0.4s |
@@ -114,9 +115,9 @@ Calldata sizes below are **payload bytes** (the application data), not ABI-encod
 
 | Transaction | Gas (measured) | Payload |
 |-------------|---------------|---------|
-| Register keys (one-time) | 79,846 | 1,250 B (33 + 33 + 1,184) |
+| Register keys (one-time) | 80,503 | 1,250 B (33 + 33 + 1,184) |
 | First contact (one-time per pair) | 78,578 | 1,121 B |
-| Memo (per payment) | 34,206 | 17 B (16 nonce + 1 view tag) |
+| Memo (per payment) | 34,995 | 21 B (16 nonce + 1 viewTag + 4 confirmTag) |
 | ETH transfer to stealth addr | 21,000 | 0 B |
 
 ETH transfer is constant (21K gas) across all models. The announcement gas is what varies:
@@ -125,21 +126,21 @@ ETH transfer is constant (21K gas) across all models. The announcement gas is wh
 |-------|-----------------|---------|
 | Classical ERC-5564 | ~47K (estimated) | 34 B |
 | Direct ML-KEM | ~64K (estimated) | 1,089 B |
-| Pairwise (per payment) | **34,206 (measured)** | **17 B** |
+| Pairwise (per payment) | **34,995 (measured)** | **21 B** |
 
 ## Project Structure
 
 ```
 pq_SA/
 ├── contracts/
-│   ├── src/MemoRegistry.sol       Stealth address discovery log (14 Foundry tests)
+│   ├── src/MemoRegistry.sol       Stealth address discovery log (15 Foundry tests)
 │   └── test/MemoRegistry.t.sol
 ├── crates/
 │   ├── primitives/
 │   │   ├── src/
 │   │   │   ├── hybrid_kem.rs      ECDH + ML-KEM-768 hybrid KEM
 │   │   │   └── stealth.rs         EC algebra stealth derivation (Model 1 + 2)
-│   │   └── tests/e2e.rs           5 integration tests (incl. delegation safety)
+│   │   └── tests/e2e.rs           9 integration tests (incl. delegation safety + adversarial)
 │   ├── demo/                      Full Anvil demo (stealth address flow)
 │   └── bench/                     Gas + CPU benchmarks, SVG charts
 ├── Cargo.toml
@@ -153,7 +154,7 @@ pq_SA/
 cd contracts && forge install foundry-rs/forge-std --no-commit && forge build && cd ..
 cargo build --release
 
-# Test (22 Rust + 14 Foundry = 36 total)
+# Test (30 Rust + 15 Foundry = 45 total)
 cargo test --release
 cd contracts && forge test -vv
 
@@ -200,16 +201,16 @@ cargo run -p demo --release
 | ML-KEM-768 (FIPS 203) | PQ key encapsulation (NIST Level 3) |
 | ECDH (secp256k1) | Transitional hybrid security + stealth address derivation |
 | HKDF-SHA256 | Hybrid KEM key combination, seed-to-key derivation |
-| SHA-256 (domain-separated) | Pairwise stealth derivation, view tag computation |
+| SHA-256 (domain-separated) | Pairwise stealth derivation, view tag computation, confirm tag computation |
 | EC scalar addition | Viewing/spending separation (`stealth_sk = spending_sk + hash(ss)`) |
 
 ## Design Decisions
 
 - **Gas as anti-spam**: MemoRegistry is a pure event log with no access control beyond gas cost. This matches ERC-5564's `ERC5564Announcer` design — anyone can post announcements. Scanning cost scales linearly with total announcements, bounded by chain gas limits.
-- **No channel identifiers on memos**: Memos do not identify which pairwise channel they belong to. Adding a channel ID would improve scanning efficiency (skip non-matching channels) but would leak sender-recipient linkage on-chain. The current design uses view tags (1 byte, 99.6% filter rate) to reduce scanning cost without metadata leakage. For S senders × N memos, the recipient performs S × N view tag checks — each a single SHA-256 + byte comparison.
+- **No channel identifiers on memos**: Memos do not identify which pairwise channel they belong to. Adding a channel ID would improve scanning efficiency (skip non-matching channels) but would leak sender-recipient linkage on-chain. The current design uses view tags (1 byte, 99.6% filter rate) as a fast prefilter and confirm tags (4 bytes, 1/2^32 false positive) as a channel authenticator, reducing scanning cost without metadata leakage. For S senders × N memos, the recipient performs S × N view tag checks — each a single SHA-256 + byte comparison — then confirm tag verification on the ~0.4% that pass.
 - **Sender visibility**: The sender's `msg.sender` is visible on every transaction — same as classical ERC-5564. Sender anonymity requires a relayer or account abstraction (ERC-4337).
-- **Pairwise vs classical privacy**: In classical stealth (33 B/payment), all payments are identical-looking announcements. In pairwise (17 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count how many channels a sender has and how many total memos, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. Stealth addresses are unique per payment in both models. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise does compartmentalize per-sender — one compromised `k_pairwise` reveals only one channel, while viewing bundle compromise reveals all.
-- **Direct ML-KEM alternative**: for wallets prioritizing simplicity, direct ML-KEM (Model 1) is stateless — fresh encapsulation per payment, 1,089 B, ~85K gas, no k_pairwise. ~55% more gas than pairwise but zero complexity. A future `registerKeysOnBehalf` (as defined in [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) — EIP-712 signature + nonce + EIP-1271 support) improves onboarding. This PoC focuses on pairwise because it is the novel contribution.
+- **Pairwise vs classical privacy**: In classical stealth (33 B/payment), all payments are identical-looking announcements. In pairwise (21 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count how many channels a sender has and how many total memos, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. Stealth addresses are unique per payment in both models. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise does compartmentalize per-sender — one compromised `k_pairwise` reveals only one channel, while viewing bundle compromise reveals all.
+- **Direct ML-KEM alternative**: for wallets prioritizing simplicity, direct ML-KEM (Model 1) is stateless — fresh encapsulation per payment, 1,089 B, ~85K gas, no k_pairwise. ~52% more gas than pairwise but zero complexity. A future `registerKeysOnBehalf` (as defined in [ERC-6538](https://eips.ethereum.org/EIPS/eip-6538) — EIP-712 signature + nonce + EIP-1271 support) improves onboarding. This PoC focuses on pairwise because it is the novel contribution.
 - **Nonce reuse risk**: the pairwise derivation is deterministic in (k_pairwise, nonce). If a wallet reuses a nonce (state rollback, bad RNG), two payments land at the same stealth address — linking them on-chain. Wallet implementations should use a **monotonic counter** as the nonce, with on-chain recovery (count `Memo` events per channel). Tradeoff: counter leaks ordering; random nonces don't.
 - **Demo is single-user**: The demo uses `.last()` for event queries, which is only correct for a single-user Anvil run. A production client must filter `KeyRegistered` by recipient address and try all `FirstContact` events via ML-KEM implicit rejection.
 

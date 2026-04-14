@@ -10,7 +10,7 @@ contract MemoRegistryTest is Test {
     address recipient = address(0x2);
 
     event FirstContact(uint64 indexed memoId, uint256 indexed epoch, bytes payload);
-    event Memo(uint64 indexed memoId, uint256 indexed epoch, bytes16 nonce, uint8 viewTag);
+    event Memo(uint64 indexed memoId, uint256 indexed epoch, bytes16 nonce, uint8 viewTag, bytes4 confirmTag);
     event KeyRegistered(address indexed recipient, bytes spendingPk, bytes viewingPkEc, bytes viewingEk);
 
     function setUp() public {
@@ -18,8 +18,12 @@ contract MemoRegistryTest is Test {
     }
 
     function test_registerKeys() public {
+        bytes memory spendingPk = new bytes(33);
+        spendingPk[0] = 0x02;
+        bytes memory viewingPkEc = new bytes(33);
+        viewingPkEc[0] = 0x03;
         vm.prank(recipient);
-        registry.registerKeys(new bytes(33), new bytes(33), new bytes(1184));
+        registry.registerKeys(spendingPk, viewingPkEc, new bytes(1184));
         assertTrue(registry.registered(recipient));
     }
 
@@ -55,14 +59,14 @@ contract MemoRegistryTest is Test {
 
     function test_postMemo() public {
         vm.prank(sender);
-        registry.postMemo(bytes16(uint128(42)), 0xAB);
+        registry.postMemo(bytes16(uint128(42)), 0xAB, bytes4(0xDEADBEEF));
         assertEq(registry.nextMemoId(), 1);
     }
 
     function test_memoIdIncrements() public {
         registry.postFirstContact(new bytes(1121));
-        registry.postMemo(bytes16(uint128(1)), 0x01);
-        registry.postMemo(bytes16(uint128(2)), 0x02);
+        registry.postMemo(bytes16(uint128(1)), 0x01, bytes4(0x11111111));
+        registry.postMemo(bytes16(uint128(2)), 0x02, bytes4(0x22222222));
         assertEq(registry.nextMemoId(), 3);
     }
 
@@ -70,13 +74,13 @@ contract MemoRegistryTest is Test {
         registry.postFirstContact(new bytes(1121));
         assertEq(registry.currentEpoch(), 0);
         vm.roll(block.number + 7201);
-        registry.postMemo(bytes16(uint128(1)), 0x01);
+        registry.postMemo(bytes16(uint128(1)), 0x01, bytes4(0x11111111));
         assertEq(registry.currentEpoch(), 1);
     }
 
     function test_multipleEpochAdvance() public {
         vm.roll(block.number + 14401);
-        registry.postMemo(bytes16(uint128(1)), 0x01);
+        registry.postMemo(bytes16(uint128(1)), 0x01, bytes4(0x11111111));
         assertEq(registry.currentEpoch(), 2);
     }
 
@@ -89,8 +93,16 @@ contract MemoRegistryTest is Test {
 
     function test_emitsMemoEvent() public {
         vm.expectEmit(true, true, false, true);
-        emit Memo(0, 0, bytes16(uint128(42)), 0xAB);
-        registry.postMemo(bytes16(uint128(42)), 0xAB);
+        emit Memo(0, 0, bytes16(uint128(42)), 0xAB, bytes4(0xDEADBEEF));
+        registry.postMemo(bytes16(uint128(42)), 0xAB, bytes4(0xDEADBEEF));
+    }
+
+    function test_registerKeysRejectsSameSpendingAndViewing() public {
+        bytes memory sameKey = new bytes(33);
+        sameKey[0] = 0x02; // nonzero to make it look like a real key
+        vm.prank(recipient);
+        vm.expectRevert("spending and viewing EC keys must differ");
+        registry.registerKeys(sameKey, sameKey, new bytes(1184));
     }
 
     function test_gasFirstContact() public {
@@ -101,7 +113,7 @@ contract MemoRegistryTest is Test {
 
     function test_gasMemo() public {
         uint256 g = gasleft();
-        registry.postMemo(bytes16(uint128(42)), 0xAB);
+        registry.postMemo(bytes16(uint128(42)), 0xAB, bytes4(0xDEADBEEF));
         emit log_named_uint("postMemo gas", g - gasleft());
     }
 }

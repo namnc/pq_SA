@@ -23,7 +23,8 @@ contract MemoRegistry {
         uint64 indexed memoId,
         uint256 indexed epoch,
         bytes16 nonce,
-        uint8 viewTag
+        uint8 viewTag,
+        bytes4 confirmTag
     );
 
     event KeyRegistered(
@@ -45,6 +46,7 @@ contract MemoRegistry {
         require(spendingPk.length == 33, "spendingPk must be 33 bytes");
         require(viewingPkEc.length == 33, "viewingPkEc must be 33 bytes");
         require(viewingEk.length == 1184, "viewingEk must be 1184 bytes");
+        require(keccak256(spendingPk) != keccak256(viewingPkEc), "spending and viewing EC keys must differ");
         registered[msg.sender] = true;
         emit KeyRegistered(msg.sender, spendingPk, viewingPkEc, viewingEk);
     }
@@ -55,9 +57,9 @@ contract MemoRegistry {
         emit FirstContact(nextMemoId++, currentEpoch, payload);
     }
 
-    function postMemo(bytes16 nonce, uint8 viewTag) external {
+    function postMemo(bytes16 nonce, uint8 viewTag, bytes4 confirmTag) external {
         _advanceEpoch();
-        emit Memo(nextMemoId++, currentEpoch, nonce, viewTag);
+        emit Memo(nextMemoId++, currentEpoch, nonce, viewTag, confirmTag);
     }
 
     function _advanceEpoch() internal {

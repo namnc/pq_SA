@@ -142,10 +142,11 @@ async fn main() -> Result<()> {
     println!("  stealth address: {}", stealth_addr);
     println!("  view tag: 0x{:02x}", sender_stealth.view_tag);
 
-    // Post memo on-chain
+    // Post memo on-chain (nonce + viewTag + confirmTag)
     let nonce_fixed = FixedBytes::from(nonce);
+    let confirm_tag = FixedBytes::from(sender_stealth.confirm_tag);
     let memo_receipt = contract
-        .postMemo(nonce_fixed, sender_stealth.view_tag)
+        .postMemo(nonce_fixed, sender_stealth.view_tag, confirm_tag)
         .send().await?.get_receipt().await?;
     println!("  memo gas: {}", memo_receipt.gas_used);
 
@@ -197,8 +198,16 @@ async fn main() -> Result<()> {
             continue;
         }
 
+        // Confirm tag check — authenticates channel membership (1/2^32 false positive)
+        let on_chain_confirm: [u8; 4] = event.confirmTag.0;
+        if recv_stealth.confirm_tag != on_chain_confirm {
+            // View tag matched by chance but confirm tag rejects — not our channel
+            println!("  view tag matched but confirm tag rejected (false positive filtered)");
+            continue;
+        }
+
         let recv_addr = Address::from_slice(&recv_stealth.address);
-        println!("  derived stealth: {} (view tag matched)", recv_addr);
+        println!("  derived stealth: {} (view tag + confirm tag matched)", recv_addr);
 
         let balance = recipient_provider.get_balance(recv_addr).await?;
         println!("  balance: {} wei", balance);

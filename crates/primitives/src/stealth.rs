@@ -90,11 +90,33 @@ fn derive_valid_scalar(base: &[u8; 32]) -> secp256k1::SecretKey {
 }
 
 /// Compute 1-byte view tag from shared secret (filters 99.6% of non-matching notes).
+/// This is a fast prefilter, NOT a channel authenticator. Use confirm_tag for recovery.
 pub fn compute_view_tag(shared_secret: &[u8; 32]) -> u8 {
     let mut hasher = Sha256::new();
     hasher.update(b"pq-sa-view-tag-v1");
     hasher.update(shared_secret);
     hasher.finalize()[0]
+}
+
+/// Compute 4-byte confirmation tag from pairwise key + nonce.
+///
+/// Unlike the 1-byte view_tag (a fast prefilter with 1/256 false positive rate),
+/// the confirm_tag authenticates channel membership with 1/2^32 false positive rate.
+/// Used during wallet recovery to distinguish genuine channels from ML-KEM implicit
+/// rejection artifacts, and to resist memo-poisoning attacks where an adversary posts
+/// all 256 viewTag values for a chosen nonce.
+///
+/// Domain-separated from view_tag and shared_secret derivation to prevent
+/// cross-protocol collisions.
+pub fn compute_confirm_tag(k_pairwise: &[u8; 32], nonce: &[u8; 16]) -> [u8; 4] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"pq-sa-confirm-v1");
+    hasher.update(k_pairwise);
+    hasher.update(nonce);
+    let hash = hasher.finalize();
+    let mut tag = [0u8; 4];
+    tag.copy_from_slice(&hash[..4]);
+    tag
 }
 
 // =========================================================================
@@ -122,6 +144,7 @@ pub fn derive_pairwise_stealth(
     let (stealth_pk, addr) = derive_stealth_pubkey(spending_pk, &ss);
     let stealth_sk = spending_sk.map(|sk| derive_stealth_privkey(sk, &ss));
     let view_tag = compute_view_tag(&ss);
+    let confirm_tag = compute_confirm_tag(k_pairwise, nonce);
 
     ss.zeroize(); // wipe shared secret from stack
 
@@ -130,6 +153,7 @@ pub fn derive_pairwise_stealth(
         stealth_sk,
         address: addr,
         view_tag,
+        confirm_tag,
     }
 }
 
@@ -138,6 +162,9 @@ pub struct StealthResult {
     pub stealth_sk: Option<secp256k1::SecretKey>,
     pub address: [u8; 20],
     pub view_tag: u8,
+    /// 4-byte keyed confirmation tag for channel authentication during recovery.
+    /// Derived from k_pairwise + nonce (not from the shared secret).
+    pub confirm_tag: [u8; 4],
 }
 
 // =========================================================================
@@ -391,5 +418,49 @@ mod tests {
             addrs.insert(r.address);
         }
         assert_eq!(addrs.len(), 100);
+    }
+
+    // --- Confirm tag ---
+
+    #[test]
+    fn test_confirm_tag_deterministic() {
+        let k = [42u8; 32];
+        let n = [1u8; 16];
+        let tag1 = compute_confirm_tag(&k, &n);
+        let tag2 = compute_confirm_tag(&k, &n);
+        assert_eq!(tag1, tag2);
+        assert_eq!(tag1.len(), 4);
+    }
+
+    #[test]
+    fn test_confirm_tag_differs_from_view_tag_derivation() {
+        // confirm_tag is derived from (k_pairwise, nonce) directly,
+        // NOT from the shared secret — different domain, different inputs
+        let k = [42u8; 32];
+        let n = [1u8; 16];
+        let mut rng = ChaChaRng::seed_from_u64(42);
+        let (_, spending_pk) = generate_keypair(&mut rng);
+        let result = derive_pairwise_stealth(&spending_pk, None, &k, &n);
+
+        // confirm_tag should match compute_confirm_tag directly
+        assert_eq!(result.confirm_tag, compute_confirm_tag(&k, &n));
+    }
+
+    #[test]
+    fn test_confirm_tag_wrong_key_rejects() {
+        let k_real = [42u8; 32];
+        let k_wrong = [99u8; 32];
+        let n = [1u8; 16];
+        let tag_real = compute_confirm_tag(&k_real, &n);
+        let tag_wrong = compute_confirm_tag(&k_wrong, &n);
+        assert_ne!(tag_real, tag_wrong, "different k_pairwise must produce different confirm_tag");
+    }
+
+    #[test]
+    fn test_confirm_tag_different_nonces() {
+        let k = [42u8; 32];
+        let tag1 = compute_confirm_tag(&k, &[1u8; 16]);
+        let tag2 = compute_confirm_tag(&k, &[2u8; 16]);
+        assert_ne!(tag1, tag2, "different nonces must produce different confirm_tag");
     }
 }

@@ -38,6 +38,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 - **Stealth public key**: `spending_pk + hash(shared_secret) * G`. Computable by anyone with the shared secret and spending public key.
 - **Stealth private key**: `spending_sk + hash(shared_secret)`. Computable only by the spending key holder.
 - **View tag**: `SHA-256("pq-sa-view-tag-v1" || shared_secret)[0]`. A 1-byte tag that filters 99.6% of non-matching announcements.
+- **Confirm tag**: `SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]`. A 4-byte tag for channel authentication (1/2^32 false positive rate). Used during recovery to distinguish genuine channels from implicit-rejection artifacts.
 - **Pairwise key**: A shared symmetric key established via hybrid KEM (ECDH + ML-KEM) during first contact.
 
 ### Interface
@@ -76,7 +77,8 @@ interface IERC_XXXX_MemoRegistry {
         uint64 indexed memoId,
         uint256 indexed epoch,
         bytes16 nonce,
-        uint8 viewTag
+        uint8 viewTag,
+        bytes4 confirmTag
     );
 
     /// @notice Register a PQ stealth meta-address (3 keys).
@@ -89,8 +91,8 @@ interface IERC_XXXX_MemoRegistry {
     /// @notice Post a hybrid KEM first contact (1,121 B = 33 EPK + 1,088 ML-KEM ct).
     function postFirstContact(bytes calldata payload) external;
 
-    /// @notice Post a pairwise memo (nonce + view tag).
-    function postMemo(bytes16 nonce, uint8 viewTag) external;
+    /// @notice Post a pairwise memo (nonce + view tag + confirm tag).
+    function postMemo(bytes16 nonce, uint8 viewTag, bytes4 confirmTag) external;
 }
 ```
 
@@ -105,6 +107,7 @@ stealth_pk = spending_pk + scalar * G
 stealth_sk = spending_sk + scalar                         // recipient only
 stealth_addr = keccak256(stealth_pk)[12..32]
 view_tag = SHA-256("pq-sa-view-tag-v1" || shared_secret)[0]
+confirm_tag = SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]   // pairwise mode only
 ```
 
 This derivation MUST be used for both direct ML-KEM and pairwise modes. The only difference is how `shared_secret` is obtained.
@@ -112,6 +115,10 @@ This derivation MUST be used for both direct ML-KEM and pairwise modes. The only
 ### View Tag
 
 The view tag is REQUIRED for all announcements. It is the first byte of `SHA-256("pq-sa-view-tag-v1" || shared_secret)`. Recipients SHOULD check the view tag before performing full stealth address derivation, filtering ~99.6% of non-matching announcements.
+
+### Confirm Tag
+
+The confirm tag is REQUIRED for pairwise channel memos. It is the first 4 bytes of `SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)`. The confirm tag provides channel authentication with a 1/2^32 false positive rate. Recipients SHOULD use a two-stage filter: check the view tag first (99.6% prefilter), then verify the confirm tag on surviving candidates. During wallet recovery, the confirm tag distinguishes genuine channels from implicit-rejection artifacts — an attacker can cover all 256 view tag values but cannot feasibly cover 2^32 confirm tag values, resisting memo-poisoning attacks.
 
 ### Pairwise Channel (OPTIONAL)
 
@@ -122,7 +129,7 @@ First contact:  shared_secret from hybrid KEM decapsulation
 Subsequent:     shared_secret = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
 ```
 
-Subsequent payments emit `Memo` events (16 B nonce + 1 B view tag) instead of full `Announcement` events, reducing calldata from 1,089 B to 17 B per payment.
+Subsequent payments emit `Memo` events (16 B nonce + 1 B view tag + 4 B confirm tag) instead of full `Announcement` events, reducing calldata from 1,089 B to 21 B per payment.
 
 ## Rationale
 
@@ -132,7 +139,7 @@ EC scalar addition (`stealth_sk = spending_sk + hash(ss)`) is the same derivatio
 
 ### Why pairwise channels as optional?
 
-Direct ML-KEM stealth works without pairwise channels — 1,088 B per announcement. Pairwise channels are an optimization for active sender-recipient pairs, reducing per-payment calldata from 1,089 B to 17 B. The reference implementation demonstrates the pairwise model.
+Direct ML-KEM stealth works without pairwise channels — 1,088 B per announcement. Pairwise channels are an optimization for active sender-recipient pairs, reducing per-payment calldata from 1,089 B to 21 B. The reference implementation demonstrates the pairwise model.
 
 ### Why not full PQ spending?
 
@@ -149,7 +156,7 @@ A reference implementation is available at [pq_SA](https://github.com/namnc/pq_S
 - `primitives/src/stealth.rs` — EC algebra stealth derivation (Model 1 + 2)
 - `primitives/src/hybrid_kem.rs` — ECDH + ML-KEM-768 hybrid KEM with separate viewing/spending keys
 - `contracts/src/MemoRegistry.sol` — Pairwise channel memo log
-- 36 tests (22 Rust + 14 Foundry), including delegation safety, nonce counter, and secret zeroization
+- 45 tests (30 Rust + 15 Foundry), including delegation safety, nonce counter, secret zeroization, and confirm tag verification
 - End-to-end Anvil demo: first contact → memo → ETH to stealth address → recipient detects and can spend
 
 ## Security Considerations
@@ -172,7 +179,7 @@ Classical ERC-5564 announcements contain ECDH ephemeral keys. An adversary recor
 
 ### Wallet recovery
 
-Recipients SHOULD derive all keys deterministically from a single seed. First contact ciphertexts are stored permanently on-chain in events. A recipient who loses their device can re-derive keys from the seed, scan `FirstContact` or `Announcement` events, and decapsulate each ciphertext to obtain candidate pairwise keys. Due to ML-KEM implicit rejection, decapsulation always returns a key — even for first contacts not addressed to this recipient. Genuine channels MUST be verified by checking view tags against subsequent `Memo` events. Only matching channels will produce consistent view tags.
+Recipients SHOULD derive all keys deterministically from a single seed. First contact ciphertexts are stored permanently on-chain in events. A recipient who loses their device can re-derive keys from the seed, scan `FirstContact` or `Announcement` events, and decapsulate each ciphertext to obtain candidate pairwise keys. Due to ML-KEM implicit rejection, decapsulation always returns a key — even for first contacts not addressed to this recipient. Genuine channels MUST be verified using a two-stage filter on subsequent `Memo` events: first the view tag (1 byte, 99.6% rejection), then the confirm tag (`SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]`, 1/2^32 false positive rate). The confirm tag authenticates the channel, resisting memo-poisoning attacks where an attacker covers all 256 view tag values.
 
 The viewing/spending separation enables hardware wallet integration: `spending_sk` stays on the hardware device while `dk_kem` is exported to software wallets for scanning. To spend from a stealth address, the software wallet sends `scalar = hash(shared_secret)` to the hardware wallet, which computes `stealth_sk = spending_sk + scalar` and signs. The hardware wallet SHOULD verify that `spending_pk + scalar * G` matches the expected stealth address before signing.
 
