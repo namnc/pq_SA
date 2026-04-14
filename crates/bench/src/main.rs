@@ -275,7 +275,7 @@ fn direct_mlkem_send_recv(
 }
 
 // =========================================================================
-//  Pairwise Channel: one-time hybrid KEM (1121 B), then 17 B memo per payment
+//  Pairwise Channel: one-time hybrid KEM (1121 B), then 25 B memo per payment
 // =========================================================================
 fn bench_pairwise(num_payments: usize, rng: &mut ChaChaRng) -> BenchResult {
     let recipient = hybrid_kem::RecipientKeyPair::generate(rng);
@@ -293,7 +293,7 @@ fn bench_pairwise(num_payments: usize, rng: &mut ChaChaRng) -> BenchResult {
     }
 
     let setup_calldata = 1121; // 33 B ECDH + 1088 B ML-KEM
-    let calldata_per = 17; // 16 B nonce + 1 B view tag
+    let calldata_per = 25; // 16 B nonce + 1 B view tag + 8 B confirm tag
     let setup_gas = estimate_announcement_gas(setup_calldata);
     let memo_gas = estimate_announcement_gas(calldata_per);
 
@@ -592,7 +592,7 @@ fn generate_svg(results: &[BenchResult]) {
   <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="crimson" stroke-width="2.5"/>
   <text x="{}" y="{}" font-size="11">Direct ML-KEM (1,089 B per payment)</text>
   <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="steelblue" stroke-width="2.5"/>
-  <text x="{}" y="{}" font-size="11">Pairwise channel (17 B per payment)</text>
+  <text x="{}" y="{}" font-size="11">Pairwise channel (25 B per payment)</text>
 "#,
         lx, ly,
         lx + 10.0, ly + 16.0, lx + 40.0, ly + 16.0,
@@ -685,7 +685,7 @@ fn generate_calldata_svg(results: &[BenchResult]) {
   <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="crimson" stroke-width="2.5"/>
   <text x="{}" y="{}" font-size="11">Direct ML-KEM (1,089 B per payment)</text>
   <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="steelblue" stroke-width="2.5"/>
-  <text x="{}" y="{}" font-size="11">Pairwise (1,121 B setup + 17 B per)</text>
+  <text x="{}" y="{}" font-size="11">Pairwise (1,121 B setup + 25 B per)</text>
 "#,
         lx, ly,
         lx + 10.0, ly + 16.0, lx + 40.0, ly + 16.0,

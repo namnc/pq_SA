@@ -8,8 +8,8 @@
     "setup_gas": 0,
     "per_payment_gas": 47369,
     "total_gas": 47369,
-    "avg_send_us": 299,
-    "avg_recv_us": 280
+    "avg_send_us": 525,
+    "avg_recv_us": 369
   },
   {
     "model": "Direct KEM",
@@ -20,20 +20,20 @@
     "setup_gas": 0,
     "per_payment_gas": 64249,
     "total_gas": 64249,
-    "avg_send_us": 215,
-    "avg_recv_us": 348
+    "avg_send_us": 244,
+    "avg_recv_us": 281
   },
   {
     "model": "Pairwise",
     "payments": 1,
     "setup_calldata": 1121,
-    "per_payment_calldata": 17,
-    "total_calldata": 1138,
+    "per_payment_calldata": 25,
+    "total_calldata": 1146,
     "setup_gas": 64761,
-    "per_payment_gas": 47097,
-    "total_gas": 111858,
-    "avg_send_us": 348,
-    "avg_recv_us": 281
+    "per_payment_gas": 47225,
+    "total_gas": 111986,
+    "avg_send_us": 164,
+    "avg_recv_us": 134
   },
   {
     "model": "Classical",
@@ -44,8 +44,8 @@
     "setup_gas": 0,
     "per_payment_gas": 47369,
     "total_gas": 94738,
-    "avg_send_us": 329,
-    "avg_recv_us": 258
+    "avg_send_us": 202,
+    "avg_recv_us": 162
   },
   {
     "model": "Direct KEM",
@@ -56,20 +56,20 @@
     "setup_gas": 0,
     "per_payment_gas": 64249,
     "total_gas": 128498,
-    "avg_send_us": 259,
-    "avg_recv_us": 287
+    "avg_send_us": 170,
+    "avg_recv_us": 196
   },
   {
     "model": "Pairwise",
     "payments": 2,
     "setup_calldata": 1121,
-    "per_payment_calldata": 17,
-    "total_calldata": 1155,
+    "per_payment_calldata": 25,
+    "total_calldata": 1171,
     "setup_gas": 64761,
-    "per_payment_gas": 47097,
-    "total_gas": 158955,
-    "avg_send_us": 282,
-    "avg_recv_us": 240
+    "per_payment_gas": 47225,
+    "total_gas": 159211,
+    "avg_send_us": 217,
+    "avg_recv_us": 182
   },
   {
     "model": "Classical",
@@ -80,8 +80,8 @@
     "setup_gas": 0,
     "per_payment_gas": 47369,
     "total_gas": 236845,
-    "avg_send_us": 574,
-    "avg_recv_us": 463
+    "avg_send_us": 496,
+    "avg_recv_us": 405
   },
   {
     "model": "Direct KEM",
@@ -92,20 +92,20 @@
     "setup_gas": 0,
     "per_payment_gas": 64249,
     "total_gas": 321245,
-    "avg_send_us": 444,
-    "avg_recv_us": 475
+    "avg_send_us": 424,
+    "avg_recv_us": 479
   },
   {
     "model": "Pairwise",
     "payments": 5,
     "setup_calldata": 1121,
-    "per_payment_calldata": 17,
-    "total_calldata": 1206,
+    "per_payment_calldata": 25,
+    "total_calldata": 1246,
     "setup_gas": 64761,
-    "per_payment_gas": 47097,
-    "total_gas": 300246,
-    "avg_send_us": 334,
-    "avg_recv_us": 301
+    "per_payment_gas": 47225,
+    "total_gas": 300886,
+    "avg_send_us": 359,
+    "avg_recv_us": 326
   },
   {
     "model": "Classical",
@@ -116,8 +116,8 @@
     "setup_gas": 0,
     "per_payment_gas": 47369,
     "total_gas": 473690,
-    "avg_send_us": 837,
-    "avg_recv_us": 665
+    "avg_send_us": 927,
+    "avg_recv_us": 748
   },
   {
     "model": "Direct KEM",
@@ -128,20 +128,20 @@
     "setup_gas": 0,
     "per_payment_gas": 64249,
     "total_gas": 642490,
-    "avg_send_us": 719,
-    "avg_recv_us": 776
+    "avg_send_us": 696,
+    "avg_recv_us": 769
   },
   {
     "model": "Pairwise",
     "payments": 10,
     "setup_calldata": 1121,
-    "per_payment_calldata": 17,
-    "total_calldata": 1291,
+    "per_payment_calldata": 25,
+    "total_calldata": 1371,
     "setup_gas": 64761,
-    "per_payment_gas": 47097,
-    "total_gas": 535731,
-    "avg_send_us": 503,
-    "avg_recv_us": 504
+    "per_payment_gas": 47225,
+    "total_gas": 537011,
+    "avg_send_us": 515,
+    "avg_recv_us": 494
   },
   {
     "model": "Classical",
@@ -152,8 +152,8 @@
     "setup_gas": 0,
     "per_payment_gas": 47369,
     "total_gas": 947380,
-    "avg_send_us": 1665,
-    "avg_recv_us": 1326
+    "avg_send_us": 1673,
+    "avg_recv_us": 1379
   },
   {
     "model": "Direct KEM",
@@ -164,20 +164,20 @@
     "setup_gas": 0,
     "per_payment_gas": 64249,
     "total_gas": 1284980,
-    "avg_send_us": 1429,
-    "avg_recv_us": 1584
+    "avg_send_us": 1415,
+    "avg_recv_us": 1598
   },
   {
     "model": "Pairwise",
     "payments": 20,
     "setup_calldata": 1121,
-    "per_payment_calldata": 17,
-    "total_calldata": 1461,
+    "per_payment_calldata": 25,
+    "total_calldata": 1621,
     "setup_gas": 64761,
-    "per_payment_gas": 47097,
-    "total_gas": 1006701,
-    "avg_send_us": 893,
-    "avg_recv_us": 871
+    "per_payment_gas": 47225,
+    "total_gas": 1009261,
+    "avg_send_us": 924,
+    "avg_recv_us": 895
   },
   {
     "model": "Classical",
@@ -188,8 +188,8 @@
     "setup_gas": 0,
     "per_payment_gas": 47369,
     "total_gas": 2368450,
-    "avg_send_us": 4104,
-    "avg_recv_us": 3323
+    "avg_send_us": 4203,
+    "avg_recv_us": 3403
   },
   {
     "model": "Direct KEM",
@@ -200,19 +200,19 @@
     "setup_gas": 0,
     "per_payment_gas": 64249,
     "total_gas": 3212450,
-    "avg_send_us": 3447,
-    "avg_recv_us": 3851
+    "avg_send_us": 3530,
+    "avg_recv_us": 3907
   },
   {
     "model": "Pairwise",
     "payments": 50,
     "setup_calldata": 1121,
-    "per_payment_calldata": 17,
-    "total_calldata": 1971,
+    "per_payment_calldata": 25,
+    "total_calldata": 2371,
     "setup_gas": 64761,
-    "per_payment_gas": 47097,
-    "total_gas": 2419611,
-    "avg_send_us": 2074,
-    "avg_recv_us": 2060
+    "per_payment_gas": 47225,
+    "total_gas": 2426011,
+    "avg_send_us": 2186,
+    "avg_recv_us": 2157
   }
 ]

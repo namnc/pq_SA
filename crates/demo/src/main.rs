@@ -205,7 +205,7 @@ async fn main() -> Result<()> {
             continue;
         }
 
-        // Confirm tag check — authenticates channel membership (1/2^32 false positive)
+        // Confirm tag check — authenticates channel membership (1/2^64 false positive)
         let on_chain_confirm: [u8; 8] = event.confirmTag.0;
         if recv_stealth.confirm_tag != on_chain_confirm {
             // View tag matched by chance but confirm tag rejects — not our channel

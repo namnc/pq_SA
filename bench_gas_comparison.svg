@@ -35,18 +35,18 @@
   <circle cx="226.0" cy="107.0" r="4" fill="crimson"/>
   <circle cx="362.0" cy="107.0" r="4" fill="crimson"/>
   <circle cx="770.0" cy="107.0" r="4" fill="crimson"/>
-  <polyline points="103.6,-67.9 117.2,51.0 158.0,122.4 226.0,146.2 362.0,158.1 770.0,165.2" fill="none" stroke="steelblue" stroke-width="2.5"/>
-  <circle cx="103.6" cy="-67.9" r="4" fill="steelblue"/>
-  <circle cx="117.2" cy="51.0" r="4" fill="steelblue"/>
-  <circle cx="158.0" cy="122.4" r="4" fill="steelblue"/>
-  <circle cx="226.0" cy="146.2" r="4" fill="steelblue"/>
-  <circle cx="362.0" cy="158.1" r="4" fill="steelblue"/>
-  <circle cx="770.0" cy="165.2" r="4" fill="steelblue"/>
+  <polyline points="103.6,-68.3 117.2,50.6 158.0,121.9 226.0,145.7 362.0,157.6 770.0,164.7" fill="none" stroke="steelblue" stroke-width="2.5"/>
+  <circle cx="103.6" cy="-68.3" r="4" fill="steelblue"/>
+  <circle cx="117.2" cy="50.6" r="4" fill="steelblue"/>
+  <circle cx="158.0" cy="121.9" r="4" fill="steelblue"/>
+  <circle cx="226.0" cy="145.7" r="4" fill="steelblue"/>
+  <circle cx="362.0" cy="157.6" r="4" fill="steelblue"/>
+  <circle cx="770.0" cy="164.7" r="4" fill="steelblue"/>
   <rect x="110" y="80" width="280" height="75" fill="white" stroke="silver" rx="4"/>
   <line x1="120" y1="96" x2="150" y2="96" stroke="gray" stroke-width="2.5"/>
   <text x="158" y="100" font-size="11">Classical ERC-5564 (33 B ECDH, no PQ)</text>
   <line x1="120" y1="116" x2="150" y2="116" stroke="crimson" stroke-width="2.5"/>
   <text x="158" y="120" font-size="11">Direct ML-KEM (1,089 B per payment)</text>
   <line x1="120" y1="136" x2="150" y2="136" stroke="steelblue" stroke-width="2.5"/>
-  <text x="158" y="140" font-size="11">Pairwise channel (17 B per payment)</text>
+  <text x="158" y="140" font-size="11">Pairwise channel (25 B per payment)</text>
 </svg>

@@ -1,6 +1,6 @@
 # Post-Quantum Key Exchange for Stealth Addresses with Viewing/Spending Separation
 
-We show how to add ML-KEM-768 ([FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf)) to Ethereum stealth addresses (ERC-5564) via a **hybrid KEM** (ECDH + ML-KEM-768), preserving **viewing/spending key separation** via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the shared secret is secure. A scanning server with the viewing bundle can detect payments but cannot spend. We also show a pairwise channel optimization that amortizes the 1,125 B hybrid ciphertext (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext) to a one-time cost.
+We show how to add ML-KEM-768 ([FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf)) to Ethereum stealth addresses (ERC-5564) via a **hybrid KEM** (ECDH + ML-KEM-768), preserving **viewing/spending key separation** via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the shared secret is secure. A scanning server with the viewing bundle can detect payments but cannot spend. We also show a pairwise channel optimization that amortizes the 1,121 B hybrid ciphertext (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext) to a one-time cost.
 
 **Code**: [github.com/namnc/pq_SA](https://github.com/namnc/pq_SA) (Rust + Solidity, 45 tests, Anvil demo)
 **Quick start**: `cd contracts && forge install foundry-rs/forge-std --no-commit && forge build && cd .. && cargo test --release`
@@ -72,7 +72,7 @@ The 1,088 B ciphertext per payment is the "PQ tax." For active sender-recipient 
 ```
 First contact (one-time):
   Hybrid KEM: ECDH(secp256k1) + ML-KEM-768 → k_pairwise
-  On-chain: 1,125 B (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext)
+  On-chain: 1,121 B (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext)
 
 Per payment (after first contact):
   ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
@@ -111,7 +111,7 @@ Wallet implementations should use a **monotonic counter** (not random) as the no
 
 In classical stealth (34 B/payment), all payments are identical-looking announcements. In pairwise (25 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count channels and total memos per sender, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise compartmentalizes per-sender — one compromised `k_pairwise` reveals only one channel, while viewing bundle compromise reveals all.
 
-Mitigation for channel-count leakage: senders can post **dummy first contacts** (encrypted to random keys) to obscure the true number of active channels. Cost: one additional 1,125 B event per dummy channel.
+Mitigation for channel-count leakage: senders can post **dummy first contacts** (encrypted to random keys) to obscure the true number of active channels. Cost: one additional 1,121 B event per dummy channel.
 
 **Archival note**: first-contact ciphertexts are event calldata — cheap to post (~0.0024 ETH total transaction gas at 30 gwei, of which ~0.0005 ETH is calldata) but must be retained by archival nodes for wallet recovery. Long-term, a Merkle commitment over first contacts could compress the archival burden while preserving verifiability.
 
@@ -131,7 +131,7 @@ The pairwise model trades this statelessness for ~44× smaller per-payment calld
 2. Per-payment forward secrecy (and stateless nonce management)
 3. Small per-payment calldata (< ~50 B)
 
-Classical ERC-5564 achieves (2) + (3): a fresh 33-byte ephemeral key per payment, independent forward secrecy, no shared state. Pairwise PQ achieves (1) + (3): 21-byte memos after a one-time first contact. Direct ML-KEM achieves (1) + (2): fresh encapsulation per payment, stateless — but 1,088 bytes each.
+Classical ERC-5564 achieves (2) + (3): a fresh 33-byte ephemeral key per payment, independent forward secrecy, no shared state. Pairwise PQ achieves (1) + (3): 25-byte memos after a one-time first contact. Direct ML-KEM achieves (1) + (2): fresh encapsulation per payment, stateless — but 1,088 bytes each.
 
 **Approaches considered and rejected** (for recovering forward secrecy within the pairwise model):
 
@@ -140,7 +140,7 @@ Classical ERC-5564 achieves (2) + (3): a fresh 33-byte ephemeral key per payment
 | **Hash chain ratchet** `k_{i+1} = H(k_i \|\| i)` | Sender-side forward secrecy after deletion of `k_i` | Requires ordered processing; blockchain scanning is unordered. Receiver must walk the chain sequentially to reach memo `i`. |
 | **GGM tree (puncturable PRF)** | Per-payment forward secrecy + random access via tree-path derivation; sender/server puncture used leaves | 32 hashes per derivation, complex puncture state (≤1 KB/channel), and the receiver can always reconstruct from seed — bounding forward secrecy to the hot scanning key, not the cold recovery path. |
 | **Per-payment ephemeral EC** `HKDF(ECDH(esk, viewing_pk_ec) \|\| k_pairwise)` | Classical forward secrecy; eliminates nonce management (epk is stateless) | 34 B/payment (2× current). No PQ forward secrecy — Shor's algorithm recovers `ss_ec` from on-chain `epk`, leaving only `k_pairwise` as protection, which is the static-key problem restated. |
-| **Periodic re-keying** (new first contact every N payments) | Epoch-bounded forward secrecy | 1,125 B per re-key; forward secrecy is epoch-granular, not per-payment. Doesn't solve nonce management within an epoch. |
+| **Periodic re-keying** (new first contact every N payments) | Epoch-bounded forward secrecy | 1,121 B per re-key; forward secrecy is epoch-granular, not per-payment. Doesn't solve nonce management within an epoch. |
 
 All four fail for the same root cause: **per-payment PQ forward secrecy requires per-payment PQ key encapsulation** (1,088 B), which is precisely what the pairwise optimization exists to avoid. Nonce management is similarly inherent: any scheme that reuses a shared secret needs a differentiator, and that differentiator requires per-receiver state.
 
@@ -183,7 +183,7 @@ The viewing/spending separation maps to hardware wallets: `spending_sk` stays on
 | Viewing/spending separation | Yes | **Yes** | **Yes** |
 | View tag (99.6% filter) | Yes | **Yes** | **Yes** |
 | Safe server delegation | Yes | **Yes** | **Yes** |
-| Payload per payment | 34 B | 1,089 B | **25 B** (after 1,125 B first contact) |
+| Payload per payment | 34 B | 1,089 B | **25 B** (after 1,121 B first contact) |
 | Announcement gas | ~47K (estimated) | ~64K (estimated) | **~35K (measured)** (after ~79K first contact) |
 | ETH transfer gas | 21K | 21K | 21K |
 | Scanning 10K notes (measured) | ~0.7s | ~0.8s | ~0.4s |
@@ -200,7 +200,7 @@ Payload sizes are application data, not ABI-encoded wire calldata. Pairwise gas 
 
 Classical and direct ML-KEM totals are computed from estimated per-payment gas. Pairwise total is derived from Anvil measurements: ~79K first contact + 10 × (~35K memo + 21K ETH) ≈ 639K (exact values vary slightly between runs due to calldata byte composition; see demo output). The pairwise payload advantage (~44× smaller than direct ML-KEM per payment) is the primary motivation; gas savings depend on the classical/direct announcer implementation.
 
-**On-chain storage cost**: the 1,125 B first-contact ciphertext is stored as event calldata (not state), so it does not occupy persistent storage. At 16 gas/nonzero-byte and 30 gwei gas price, a first contact costs ~0.0005 ETH in calldata gas.
+**On-chain storage cost**: the 1,121 B first-contact ciphertext is stored as event calldata (not state), so it does not occupy persistent storage. At 16 gas/nonzero-byte and 30 gwei gas price, a first contact costs ~0.0005 ETH in calldata gas.
 
 ## Migration Path
 

@@ -46,7 +46,7 @@ The 1,088 B ciphertext appears once per sender-recipient pair, then amortizes to
 
 ```
 First contact (one-time):
-  Hybrid KEM: ECDH + ML-KEM-768 → k_pairwise              ← 1,125 B (33 + 1,088)
+  Hybrid KEM: ECDH + ML-KEM-768 → k_pairwise              ← 1,121 B (33 + 1,088)
 
 Per payment:
   ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
@@ -116,7 +116,7 @@ Calldata sizes below are **payload bytes** (the application data), not ABI-encod
 | Transaction | Gas (measured) | Payload |
 |-------------|---------------|---------|
 | Register keys (one-time) | 73,700 | 1,250 B (33 + 33 + 1,184) |
-| First contact (one-time per pair) | 78,578 | 1,125 B |
+| First contact (one-time per pair) | 78,578 | 1,121 B |
 | Memo (per payment) | 34,851 | 25 B (16 nonce + 1 viewTag + 8 confirmTag) |
 | ETH transfer to stealth addr | 21,000 | 0 B |
 

@@ -88,7 +88,7 @@ interface IERC_XXXX_MemoRegistry {
         bytes calldata viewingEk
     ) external;
 
-    /// @notice Post a hybrid KEM first contact (1,125 B = 33 EPK + 1,088 ML-KEM ct).
+    /// @notice Post a hybrid KEM first contact (1,121 B = 33 EPK + 1,088 ML-KEM ct).
     function postFirstContact(bytes calldata payload) external;
 
     /// @notice Post a pairwise memo (nonce + view tag + confirm tag).

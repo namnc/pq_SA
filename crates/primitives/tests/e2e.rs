@@ -161,7 +161,7 @@ fn test_recovery_rejects_wrong_channels_via_confirm_tag() {
         &recipient.spending.spending_pk, None, &k_wrong, &nonce,
     );
 
-    // View tag might match by chance (1/256), but confirm tag should reject (1/2^32)
+    // View tag might match by chance (1/256), but confirm tag should reject (1/2^64)
     // We test the confirm_tag specifically:
     assert_ne!(
         real_result.confirm_tag, wrong_result.confirm_tag,
