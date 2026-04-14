@@ -106,7 +106,9 @@ async fn main() -> Result<()> {
     // =====================================================================
     println!("--- SENDER: First Contact (Hybrid KEM) ---");
 
-    // Demo: takes last event. Production client must filter by intended recipient address.
+    // WARNING: .last() is ONLY safe in a single-user Anvil demo.
+    // Production clients MUST filter KeyRegistered by recipient address
+    // and validate all key material (pk_ec_from_bytes, ek_kem_from_bytes).
     let key_events = contract.KeyRegistered_filter().from_block(start_block).query().await?;
     let (key_event, _) = key_events.last().ok_or_else(|| eyre::eyre!("no KeyRegistered"))?;
     let spending_pk = hybrid_kem::pk_ec_from_bytes(&key_event.spendingPk).map_err(|e| eyre::eyre!("{}", e))?;
@@ -131,8 +133,11 @@ async fn main() -> Result<()> {
     // =====================================================================
     println!("--- SENDER: Payment via Stealth Address ---");
 
-    let mut nonce = [0u8; 16];
-    rng.fill_bytes(&mut nonce);
+    // Production wallets MUST use a monotonic counter (NonceCounter) to prevent
+    // nonce reuse from state rollback, bad RNG, or multi-device races.
+    // This demo uses NonceCounter starting at 0 for reproducibility.
+    let mut nonce_counter = stealth::NonceCounter::new();
+    let nonce = nonce_counter.next_nonce();
 
     // Stealth address uses SPENDING key (not viewing key)
     let sender_stealth = stealth::derive_pairwise_stealth(
@@ -164,9 +169,11 @@ async fn main() -> Result<()> {
     // =====================================================================
     println!("--- RECIPIENT: Scanning Memos ---");
 
-    // Demo: takes last event. Production client must decapsulate ALL FirstContact events
-    // (ML-KEM implicit rejection always returns a key, even for wrong recipient) and then
-    // verify each candidate k_pairwise against Memo view tags to identify genuine channels.
+    // WARNING: .last() is ONLY safe in a single-user Anvil demo.
+    // Production clients MUST decapsulate ALL FirstContact events (ML-KEM implicit
+    // rejection always returns a key, even for wrong recipient) and verify each
+    // candidate k_pairwise using the two-stage filter: view tag (99.6% prefilter)
+    // then confirm tag (1/2^64 channel authentication).
     let fc_events = contract.FirstContact_filter().from_block(start_block).query().await?;
     let (fc_event, _) = fc_events.last().ok_or_else(|| eyre::eyre!("no FirstContact"))?;
     let fc_payload = &fc_event.payload;
@@ -199,7 +206,7 @@ async fn main() -> Result<()> {
         }
 
         // Confirm tag check — authenticates channel membership (1/2^32 false positive)
-        let on_chain_confirm: [u8; 4] = event.confirmTag.0;
+        let on_chain_confirm: [u8; 8] = event.confirmTag.0;
         if recv_stealth.confirm_tag != on_chain_confirm {
             // View tag matched by chance but confirm tag rejects — not our channel
             println!("  view tag matched but confirm tag rejected (false positive filtered)");

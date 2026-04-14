@@ -98,24 +98,24 @@ pub fn compute_view_tag(shared_secret: &[u8; 32]) -> u8 {
     hasher.finalize()[0]
 }
 
-/// Compute 4-byte confirmation tag from pairwise key + nonce.
+/// Compute 8-byte confirmation tag from pairwise key + nonce.
 ///
 /// Unlike the 1-byte view_tag (a fast prefilter with 1/256 false positive rate),
-/// the confirm_tag authenticates channel membership with 1/2^32 false positive rate.
+/// the confirm_tag authenticates channel membership with 1/2^64 false positive rate.
 /// Used during wallet recovery to distinguish genuine channels from ML-KEM implicit
 /// rejection artifacts, and to resist memo-poisoning attacks where an adversary posts
 /// all 256 viewTag values for a chosen nonce.
 ///
 /// Domain-separated from view_tag and shared_secret derivation to prevent
 /// cross-protocol collisions.
-pub fn compute_confirm_tag(k_pairwise: &[u8; 32], nonce: &[u8; 16]) -> [u8; 4] {
+pub fn compute_confirm_tag(k_pairwise: &[u8; 32], nonce: &[u8; 16]) -> [u8; 8] {
     let mut hasher = Sha256::new();
     hasher.update(b"pq-sa-confirm-v1");
     hasher.update(k_pairwise);
     hasher.update(nonce);
     let hash = hasher.finalize();
-    let mut tag = [0u8; 4];
-    tag.copy_from_slice(&hash[..4]);
+    let mut tag = [0u8; 8];
+    tag.copy_from_slice(&hash[..8]);
     tag
 }
 
@@ -162,9 +162,9 @@ pub struct StealthResult {
     pub stealth_sk: Option<secp256k1::SecretKey>,
     pub address: [u8; 20],
     pub view_tag: u8,
-    /// 4-byte keyed confirmation tag for channel authentication during recovery.
+    /// 8-byte keyed confirmation tag for channel authentication during recovery.
     /// Derived from k_pairwise + nonce (not from the shared secret).
-    pub confirm_tag: [u8; 4],
+    pub confirm_tag: [u8; 8],
 }
 
 // =========================================================================
@@ -429,7 +429,7 @@ mod tests {
         let tag1 = compute_confirm_tag(&k, &n);
         let tag2 = compute_confirm_tag(&k, &n);
         assert_eq!(tag1, tag2);
-        assert_eq!(tag1.len(), 4);
+        assert_eq!(tag1.len(), 8);
     }
 
     #[test]

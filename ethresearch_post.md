@@ -1,6 +1,6 @@
 # Post-Quantum Key Exchange for Stealth Addresses with Viewing/Spending Separation
 
-We show how to add ML-KEM-768 ([FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf)) to Ethereum stealth addresses (ERC-5564) via a **hybrid KEM** (ECDH + ML-KEM-768), preserving **viewing/spending key separation** via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the shared secret is secure. A scanning server with the viewing bundle can detect payments but cannot spend. We also show a pairwise channel optimization that amortizes the 1,121 B hybrid ciphertext (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext) to a one-time cost.
+We show how to add ML-KEM-768 ([FIPS 203](https://csrc.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf)) to Ethereum stealth addresses (ERC-5564) via a **hybrid KEM** (ECDH + ML-KEM-768), preserving **viewing/spending key separation** via EC scalar addition. The hybrid provides transitional security: if either ECDH or ML-KEM holds, the shared secret is secure. A scanning server with the viewing bundle can detect payments but cannot spend. We also show a pairwise channel optimization that amortizes the 1,125 B hybrid ciphertext (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext) to a one-time cost.
 
 **Code**: [github.com/namnc/pq_SA](https://github.com/namnc/pq_SA) (Rust + Solidity, 45 tests, Anvil demo)
 **Quick start**: `cd contracts && forge install foundry-rs/forge-std --no-commit && forge build && cd .. && cargo test --release`
@@ -72,13 +72,13 @@ The 1,088 B ciphertext per payment is the "PQ tax." For active sender-recipient 
 ```
 First contact (one-time):
   Hybrid KEM: ECDH(secp256k1) + ML-KEM-768 → k_pairwise
-  On-chain: 1,121 B (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext)
+  On-chain: 1,125 B (33 B ECDH ephemeral key + 1,088 B ML-KEM ciphertext)
 
 Per payment (after first contact):
   ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)
   stealth_pk = spending_pk + SHA-256("pq-sa-stealth-derive-v1" || ss) * G
-  confirm_tag = SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]
-  post memo(nonce, view_tag, confirm_tag)                    21 B payload on-chain
+  confirm_tag = SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..8]
+  post memo(nonce, view_tag, confirm_tag)                    25 B payload on-chain
   send ETH to stealth address
 ```
 
@@ -96,7 +96,7 @@ Sender                          On-chain                    Recipient/Server
   │                                │    decapsulate → k_pairwise  │
   │                                │<── scan Memo ────────────────┤
   │                                │    check viewTag (99.6% prefilter)
-  │                                │    check confirmTag (1/2^32 auth)
+  │                                │    check confirmTag (1/2^64 auth)
   │                                │    derive stealth_addr       │
   │                                │    check balance → FOUND     │
 ```
@@ -109,9 +109,9 @@ Wallet implementations should use a **monotonic counter** (not random) as the no
 
 ### Privacy Tradeoff vs Classical
 
-In classical stealth (34 B/payment), all payments are identical-looking announcements. In pairwise (21 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count channels and total memos per sender, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise compartmentalizes per-sender — one compromised `k_pairwise` reveals only one channel, while viewing bundle compromise reveals all.
+In classical stealth (34 B/payment), all payments are identical-looking announcements. In pairwise (25 B/payment), `FirstContact` and `Memo` are distinguishable event types — an observer can count channels and total memos per sender, though they can't link specific memos to specific channels (no channel ID). With multiple channels, the distribution is ambiguous. The key tradeoff: if `k_pairwise` is compromised, all payments in that channel are linkable; in classical, each ephemeral key is independent. Pairwise compartmentalizes per-sender — one compromised `k_pairwise` reveals only one channel, while viewing bundle compromise reveals all.
 
-Mitigation for channel-count leakage: senders can post **dummy first contacts** (encrypted to random keys) to obscure the true number of active channels. Cost: one additional 1,121 B event per dummy channel.
+Mitigation for channel-count leakage: senders can post **dummy first contacts** (encrypted to random keys) to obscure the true number of active channels. Cost: one additional 1,125 B event per dummy channel.
 
 **Archival note**: first-contact ciphertexts are event calldata — cheap to post (~0.0024 ETH total transaction gas at 30 gwei, of which ~0.0005 ETH is calldata) but must be retained by archival nodes for wallet recovery. Long-term, a Merkle commitment over first contacts could compress the archival burden while preserving verifiability.
 
@@ -121,7 +121,7 @@ The pairwise model introduces two limitations absent in both classical stealth a
 
 **Neither classical nor direct ML-KEM has these problems.** In classical ERC-5564, the sender generates a fresh ephemeral keypair per payment from the OS CSPRNG — no nonce, no per-receiver state, no long-lived shared secret. Direct ML-KEM (Model 1) works the same way: fresh encapsulation per payment, internal randomness, stateless. Standard wallet practice (Umbra, etc.) is: call the CSPRNG, compute the ECDH/KEM, post, forget. Birthday collision on a 256-bit random scalar or ML-KEM internal randomness requires ~2^{128} payments — not a concern.
 
-The pairwise model trades this statelessness for ~52× smaller per-payment calldata. The nonce is the pairwise model's substitute for the fresh randomness that classical and direct models get for free from ephemeral key generation. The static `k_pairwise` is what eliminates per-payment forward secrecy. Both problems are the cost of amortization — not of post-quantum cryptography itself.
+The pairwise model trades this statelessness for ~44× smaller per-payment calldata. The nonce is the pairwise model's substitute for the fresh randomness that classical and direct models get for free from ephemeral key generation. The static `k_pairwise` is what eliminates per-payment forward secrecy. Both problems are the cost of amortization — not of post-quantum cryptography itself.
 
 **The constraint.** No known PQ KEM produces ciphertexts under ~700 bytes. ECDH ephemeral keys are 33 bytes; ML-KEM-768 ciphertexts are 1,088 bytes. This 33× gap makes per-payment PQ encapsulation expensive, motivating the pairwise optimization. But the optimization introduces a long-lived shared secret (`k_pairwise`), which creates both problems: nonces are needed to differentiate payments under the same key, and the static key means compromise reveals the entire channel history (nonces are on-chain in plaintext).
 
@@ -140,7 +140,7 @@ Classical ERC-5564 achieves (2) + (3): a fresh 33-byte ephemeral key per payment
 | **Hash chain ratchet** `k_{i+1} = H(k_i \|\| i)` | Sender-side forward secrecy after deletion of `k_i` | Requires ordered processing; blockchain scanning is unordered. Receiver must walk the chain sequentially to reach memo `i`. |
 | **GGM tree (puncturable PRF)** | Per-payment forward secrecy + random access via tree-path derivation; sender/server puncture used leaves | 32 hashes per derivation, complex puncture state (≤1 KB/channel), and the receiver can always reconstruct from seed — bounding forward secrecy to the hot scanning key, not the cold recovery path. |
 | **Per-payment ephemeral EC** `HKDF(ECDH(esk, viewing_pk_ec) \|\| k_pairwise)` | Classical forward secrecy; eliminates nonce management (epk is stateless) | 34 B/payment (2× current). No PQ forward secrecy — Shor's algorithm recovers `ss_ec` from on-chain `epk`, leaving only `k_pairwise` as protection, which is the static-key problem restated. |
-| **Periodic re-keying** (new first contact every N payments) | Epoch-bounded forward secrecy | 1,121 B per re-key; forward secrecy is epoch-granular, not per-payment. Doesn't solve nonce management within an epoch. |
+| **Periodic re-keying** (new first contact every N payments) | Epoch-bounded forward secrecy | 1,125 B per re-key; forward secrecy is epoch-granular, not per-payment. Doesn't solve nonce management within an epoch. |
 
 All four fail for the same root cause: **per-payment PQ forward secrecy requires per-payment PQ key encapsulation** (1,088 B), which is precisely what the pairwise optimization exists to avoid. Nonce management is similarly inherent: any scheme that reuses a shared secret needs a differentiator, and that differentiator requires per-receiver state.
 
@@ -169,7 +169,7 @@ A quantum attacker who records the first contact ciphertext today can later brea
 
 ### Wallet Recovery
 
-The recipient stores only a 32-byte seed. Keys are derived deterministically via labeled HKDF: `spending_sk = HKDF(seed, "pq-sa-spending-v1")`, `viewing_sk_ec = HKDF(seed, "pq-sa-viewing-ec-v1")`, `ml_kem_seed = HKDF(seed, "pq-sa-viewing-kem-v1")`. First contact ciphertexts are permanently on-chain. To recover: re-derive keys from seed, scan `FirstContact` events, decapsulate each to get candidate `k_pairwise` values. Note: ML-KEM implicit rejection means decapsulation always returns a key, even for first contacts not addressed to you. Genuine channels are identified by a two-stage filter on `Memo` events: first the view tag (1 byte, 99.6% rejection of non-matches), then the confirm tag (`SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]`, 1/2^32 false positive rate). The confirm tag authenticates the channel — an attacker can cover all 256 view tag values but not 2^32 confirm tag values, resisting memo-poisoning during recovery.
+The recipient stores only a 32-byte seed. Keys are derived deterministically via labeled HKDF: `spending_sk = HKDF(seed, "pq-sa-spending-v1")`, `viewing_sk_ec = HKDF(seed, "pq-sa-viewing-ec-v1")`, `ml_kem_seed = HKDF(seed, "pq-sa-viewing-kem-v1")`. First contact ciphertexts are permanently on-chain. To recover: re-derive keys from seed, scan `FirstContact` events, decapsulate each to get candidate `k_pairwise` values. Note: ML-KEM implicit rejection means decapsulation always returns a key, even for first contacts not addressed to you. Genuine channels are identified by a two-stage filter on `Memo` events: first the view tag (1 byte, 99.6% rejection of non-matches), then the confirm tag (`SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..8]`, 1/2^64 false positive rate). The confirm tag authenticates the channel — an attacker can cover all 256 view tag values but not 2^64 confirm tag values, resisting memo-poisoning during recovery.
 
 ### Hardware Wallet Integration
 
@@ -183,7 +183,7 @@ The viewing/spending separation maps to hardware wallets: `spending_sk` stays on
 | Viewing/spending separation | Yes | **Yes** | **Yes** |
 | View tag (99.6% filter) | Yes | **Yes** | **Yes** |
 | Safe server delegation | Yes | **Yes** | **Yes** |
-| Payload per payment | 34 B | 1,089 B | **21 B** (after 1,121 B first contact) |
+| Payload per payment | 34 B | 1,089 B | **25 B** (after 1,125 B first contact) |
 | Announcement gas | ~47K (estimated) | ~64K (estimated) | **~35K (measured)** (after ~79K first contact) |
 | ETH transfer gas | 21K | 21K | 21K |
 | Scanning 10K notes (measured) | ~0.7s | ~0.8s | ~0.4s |
@@ -196,11 +196,11 @@ Payload sizes are application data, not ABI-encoded wire calldata. Pairwise gas 
 |-------|-----------|---------------|
 | Classical (10 × announce + ETH) | ~680K (estimated) | 340 B |
 | Direct ML-KEM (10 × announce + ETH) | ~850K (estimated) | 10,890 B |
-| **Pairwise (1 first contact + 10 memos + ETH)** | **~639K (measured)** | **1,331 B** |
+| **Pairwise (1 first contact + 10 memos + ETH)** | **~639K (measured)** | **1,371 B** |
 
-Classical and direct ML-KEM totals are computed from estimated per-payment gas. Pairwise total is derived from Anvil measurements: ~79K first contact + 10 × (~35K memo + 21K ETH) ≈ 639K (exact values vary slightly between runs due to calldata byte composition; see demo output). The pairwise payload advantage (~52× smaller than direct ML-KEM per payment) is the primary motivation; gas savings depend on the classical/direct announcer implementation.
+Classical and direct ML-KEM totals are computed from estimated per-payment gas. Pairwise total is derived from Anvil measurements: ~79K first contact + 10 × (~35K memo + 21K ETH) ≈ 639K (exact values vary slightly between runs due to calldata byte composition; see demo output). The pairwise payload advantage (~44× smaller than direct ML-KEM per payment) is the primary motivation; gas savings depend on the classical/direct announcer implementation.
 
-**On-chain storage cost**: the 1,121 B first-contact ciphertext is stored as event calldata (not state), so it does not occupy persistent storage. At 16 gas/nonzero-byte and 30 gwei gas price, a first contact costs ~0.0005 ETH in calldata gas.
+**On-chain storage cost**: the 1,125 B first-contact ciphertext is stored as event calldata (not state), so it does not occupy persistent storage. At 16 gas/nonzero-byte and 30 gwei gas price, a first contact costs ~0.0005 ETH in calldata gas.
 
 ## Migration Path
 
@@ -214,7 +214,7 @@ For wallets prioritizing simplicity, direct ML-KEM (Model 1) is a stateless alte
 
 BIP-47 (2015) proposed pairwise payment codes for Bitcoin — saw limited adoption because the 33 B ECDH ephemeral key is trivial, and stealth addresses provide unlinkability without persistent state.
 
-In PQ, the 1,088 B ML-KEM ciphertext makes pairwise channels an economically motivated optimization: ~52× payload reduction (1,089 → 21 B) for active channels. Not a necessity — the direct replacement works without it — but a significant saving at ~16 gas/byte.
+In PQ, the 1,088 B ML-KEM ciphertext makes pairwise channels an economically motivated optimization: ~44× payload reduction (1,089 → 25 B) for active channels. Not a necessity — the direct replacement works without it — but a significant saving at ~16 gas/byte.
 
 ## Scope and Limitations
 
@@ -246,14 +246,14 @@ This works because the map `sk ↦ sk·G` is a **group homomorphism**: addition 
 
 - **Sender can steal funds**: PQ `KeyGen(seed) → (pk, sk)` is monolithic — whoever derives the seed gets both keys. If the sender can compute `stealth_pk`, the sender also obtains `stealth_sk`.
 - **EOA stealth addresses are impossible**: Ethereum EOAs derive `address = hash(public_key)`. Without the homomorphism, deriving the public key requires the spending secret — or reveals the private key to the sender. Neither is acceptable.
-- **Memo payload grows**: the stealth address must be encrypted in the memo (~36 B) rather than derived, increasing per-payment calldata from 21 B to ~57 B.
+- **Memo payload grows**: the stealth address must be encrypted in the memo (~36 B) rather than derived, increasing per-payment calldata from 25 B to ~57 B.
 - **Hardware wallet model breaks**: no offset scalar to send. The device must generate a full PQ keypair per stealth address.
 
 **What survives independently of EC scalar addition:**
 
-- **View tags and confirm tags**: `SHA-256("pq-sa-view-tag-v1" || ss)[0]` where `ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)` — pure symmetric crypto. Unchanged. The confirm tag (`SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..4]`) is also pure symmetric crypto and survives unchanged.
+- **View tags and confirm tags**: `SHA-256("pq-sa-view-tag-v1" || ss)[0]` where `ss = SHA-256("pq-sa-pairwise-stealth-v1" || k_pairwise || nonce)` — pure symmetric crypto. Unchanged. The confirm tag (`SHA-256("pq-sa-confirm-v1" || k_pairwise || nonce)[0..8]`) is also pure symmetric crypto and survives unchanged.
 - **Pairwise channels**: ML-KEM first contact → `k_pairwise`. Unchanged in a fully PQ future (simplified to pure ML-KEM, dropping the ECDH half of the hybrid).
-- **Scanning delegation**: view tags filter 99.6% of memos; confirm tags authenticate the remaining candidates (1/2^32 false positive). The final step requires AES-GCM decryption (to recover the encrypted stealth address) instead of EC point addition. Functionally equivalent.
+- **Scanning delegation**: view tags filter 99.6% of memos; confirm tags authenticate the remaining candidates (1/2^64 false positive). The final step requires AES-GCM decryption (to recover the encrypted stealth address) instead of EC point addition. Functionally equivalent.
 - **HNDL defense**: ML-KEM protects the first contact ciphertext. Unchanged.
 
 **No NIST-standardized PQ signature scheme has the homomorphic property.** The obstacle is structural, not a parameter choice. All three NIST PQ signature finalists were analyzed:
@@ -337,7 +337,7 @@ The practical resolution is the same as our analysis above: smart contract walle
 | PQ security | No | Yes | Yes (Level 5) | **Yes (Level 3)** |
 | Viewing/spending separation | Yes | Lattice arithmetic | Separate vk/mSK | **EC scalar addition** |
 | Ethereum-compatible | Yes | No | SNARK-friendly | **Yes (secp256k1)** |
-| Pairwise channels | No | No | No | **Yes (21 B/payment)** |
+| Pairwise channels | No | No | No | **Yes (25 B/payment)** |
 | Hybrid (transitional) | — | No | Yes | **Yes** |
 | OMR support | No | No | No | **Yes** ([pq_SA_OMR](https://github.com/namnc/pq_SA_OMR)) |
 
@@ -369,7 +369,7 @@ Aztec's [note discovery](https://docs.aztec.network/developers/docs/foundational
 ## Future Work
 
 - **Full PQ spending**: PQ transaction signatures (Dilithium, Falcon) via EIP-7932 would close the remaining quantum gap at the signing layer. However, as discussed in [Why EC Scalar Addition Has No PQ Replacement](#why-ec-scalar-addition-has-no-pq-replacement), the stealth address derivation mechanism (EC scalar addition) has no direct PQ equivalent. Fully PQ stealth addresses likely require smart contract wallets (ERC-4337) where spending is enforced by on-chain PQ signature verification, not key-homomorphic derivation. The key-exchange layer (this work) carries forward unchanged.
-- **ML-KEM-1024**: Level 5 security at 1,568 B ciphertext — the pairwise optimization becomes even more valuable (1,568 B amortized to 21 B).
+- **ML-KEM-1024**: Level 5 security at 1,568 B ciphertext — the pairwise optimization becomes even more valuable (1,568 B amortized to 25 B).
 - **Cross-chain**: L2s (Arbitrum, Optimism) already adopt ERC-5564. The pairwise approach works identically; only calldata pricing differs.
 - **Privacy-enhanced view tags**: PRF-derived tags (instead of hash truncation) could reduce metadata leakage from tag collisions. Optional 2-byte tags for high-volume services would reduce false positives to 0.0015%.
 - **Threshold viewing**: `t-of-n` viewing key sharing for multi-party compliance (e.g., custodial services that require multiple parties to detect payments).

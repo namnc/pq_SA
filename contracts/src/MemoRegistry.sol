@@ -11,8 +11,6 @@ contract MemoRegistry {
     uint256 public epochStartBlock;
     uint256 public constant BLOCKS_PER_EPOCH = 7200;
 
-    mapping(address => bool) public registered;
-
     event FirstContact(
         uint64 indexed memoId,
         uint256 indexed epoch,
@@ -24,7 +22,7 @@ contract MemoRegistry {
         uint256 indexed epoch,
         bytes16 nonce,
         uint8 viewTag,
-        bytes4 confirmTag
+        bytes8 confirmTag
     );
 
     event KeyRegistered(
@@ -47,7 +45,6 @@ contract MemoRegistry {
         require(viewingPkEc.length == 33, "viewingPkEc must be 33 bytes");
         require(viewingEk.length == 1184, "viewingEk must be 1184 bytes");
         require(keccak256(spendingPk) != keccak256(viewingPkEc), "spending and viewing EC keys must differ");
-        registered[msg.sender] = true;
         emit KeyRegistered(msg.sender, spendingPk, viewingPkEc, viewingEk);
     }
 
@@ -57,7 +54,7 @@ contract MemoRegistry {
         emit FirstContact(nextMemoId++, currentEpoch, payload);
     }
 
-    function postMemo(bytes16 nonce, uint8 viewTag, bytes4 confirmTag) external {
+    function postMemo(bytes16 nonce, uint8 viewTag, bytes8 confirmTag) external {
         _advanceEpoch();
         emit Memo(nextMemoId++, currentEpoch, nonce, viewTag, confirmTag);
     }
