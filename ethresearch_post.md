@@ -190,17 +190,36 @@ The viewing/spending separation maps to hardware wallets: `spending_sk` stays on
 
 Payload sizes are application data, not ABI-encoded wire calldata. Pairwise gas numbers are measured on Anvil (Apple M-series); classical and direct ML-KEM are estimated from the ERC-5564 announcer gas model (no contract implementation in this PoC). ETH transfer is a constant 21K base transaction.
 
+#### USD cost estimates
+
+Gas costs depend on network conditions. The table below shows per-payment USD costs (announcement + ETH transfer) at three gas price levels (ETH ≈ $2,330):
+
+| Model | Gas (announcement + ETH) | @ 0.2 gwei (Apr 2026 avg) | @ 10 gwei (moderate) | @ 30 gwei (high) |
+|-------|--------------------------|----------------------------|----------------------|-------------------|
+| Classical ERC-5564 | ~68K | **$0.03** | **$1.58** | **$4.75** |
+| Direct ML-KEM | ~85K | **$0.04** | **$1.98** | **$5.95** |
+| Pairwise memo | ~56K | **$0.03** | **$1.30** | **$3.92** |
+| Pairwise first contact | ~79K (one-time) | $0.04 | $1.84 | $5.53 |
+
+**The PQ overhead (direct ML-KEM vs classical) is ~$0.01 at current L1 gas prices and ~$1.20 at moderate gas prices.** At current April 2026 prices (0.2 gwei), all stealth address payments — classical and PQ — cost under $0.05 on L1.
+
+**Note on EIP-7623 (Pectra, May 2025):** EIP-7623 introduces a calldata cost floor of 40 gas/nonzero-byte for data-heavy transactions. Direct ML-KEM announcements (1,089 B of calldata with minimal execution) will likely hit this floor, increasing calldata gas from ~17K (at 16 gas/byte) to ~44K (at 40 gas/byte). The gas estimates above account for this. Pairwise memos (25 B) are unaffected. The floor incentivizes migration to blob space (EIP-4844) for data-heavy operations.
+
+**L1 gas context (April 2026):** L1 gas prices are at historic lows (~0.15-0.5 gwei) due to L2 migration absorbing most transaction demand. The gas limit was recently raised from 30M to 60M, with targets of 100M+ by late 2026. These trends make the PQ calldata overhead increasingly affordable on L1 over time.
+
+**Broader PQ context:** In a post-quantum Ethereum, every transaction will carry PQ signature data (Falcon-512: 666 B signature + 896 B public key = 1,562 B; ML-DSA-44: 2,420 B + 1,312 B = 3,732 B). PQ signature aggregation (SNARK-based, as in leanMultisig for consensus) will compress this for authentication. However, **encryption ciphertexts cannot be aggregated** — each ML-KEM ciphertext (1,088 B) is unique to one recipient. The stealth address ciphertext is the irreducible PQ overhead for privacy, distinct from the reducible overhead for authentication.
+
 **10-payment channel comparison** (total gas for 10 payments to the same recipient):
 
-| Model | Total gas | Total payload |
-|-------|-----------|---------------|
-| Classical (10 × announce + ETH) | ~680K (estimated) | 340 B |
-| Direct ML-KEM (10 × announce + ETH) | ~850K (estimated) | 10,890 B |
-| **Pairwise (1 first contact + 10 memos + ETH)** | **~639K (measured)** | **1,371 B** |
+| Model | Total gas | Total payload | USD @ 0.2 gwei | USD @ 10 gwei |
+|-------|-----------|---------------|-----------------|---------------|
+| Classical (10 × announce + ETH) | ~680K (estimated) | 340 B | $0.32 | $15.84 |
+| Direct ML-KEM (10 × announce + ETH) | ~850K (estimated) | 10,890 B | $0.40 | $19.81 |
+| **Pairwise (1 first contact + 10 memos + ETH)** | **~639K (measured)** | **1,371 B** | **$0.30** | **$14.89** |
 
 Classical and direct ML-KEM totals are computed from estimated per-payment gas. Pairwise total is derived from Anvil measurements: ~79K first contact + 10 × (~35K memo + 21K ETH) ≈ 639K (exact values vary slightly between runs due to calldata byte composition; see demo output). The pairwise payload advantage (~44× smaller than direct ML-KEM per payment) is the primary motivation; gas savings depend on the classical/direct announcer implementation.
 
-**On-chain storage cost**: the 1,121 B first-contact ciphertext is stored as event calldata (not state), so it does not occupy persistent storage. At 16 gas/nonzero-byte and 30 gwei gas price, a first contact costs ~0.0005 ETH in calldata gas.
+**On-chain storage cost**: the 1,121 B first-contact ciphertext is stored as event calldata (not state), so it does not occupy persistent storage. At 16 gas/nonzero-byte and 30 gwei gas price, a first contact costs ~0.0005 ETH (~$1.17) in calldata gas. At current prices (0.2 gwei), this drops to ~$0.006.
 
 ## Migration Path
 
